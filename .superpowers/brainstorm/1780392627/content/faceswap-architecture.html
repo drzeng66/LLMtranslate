@@ -1,0 +1,53 @@
+<h2>方案 A：整体架构确认</h2>
+<p class="subtitle">请确认目录分层与处理边界。换脸结果不会覆盖原始 JPG。</p>
+
+<div class="mockup">
+  <div class="mockup-header">第一层 · 照片安全归一化</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 60px 1fr 60px 1fr;gap:8px;align-items:center;text-align:center">
+      <div class="placeholder">D:\照片<br><small>45 HEIC + 4 PNG + 1 JPEG</small></div>
+      <div style="font-size:26px">→</div>
+      <div class="placeholder">最高质量 JPG<br><small>保留分辨率和 EXIF</small></div>
+      <div style="font-size:26px">→</div>
+      <div class="placeholder">核验成功后<br><small>删除对应原格式照片</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">第二层 · ComfyUI 两阶段批量换脸</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 48px 1fr 48px 1fr 48px 1fr;gap:8px;align-items:center;text-align:center">
+      <div class="placeholder">me0.jpg<br><small>统一半侧脸参考</small></div>
+      <div style="font-size:24px">+</div>
+      <div class="placeholder">原始 JPG<br><small>单人藏服照片</small></div>
+      <div style="font-size:24px">→</div>
+      <div class="placeholder">ReActor<br><small>脸部轮廓内替换</small></div>
+      <div style="font-size:24px">→</div>
+      <div class="placeholder">轻量修复<br><small>不处理头饰和发型</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">第三层 · 输出与复检</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 48px 1fr 48px 1fr;gap:8px;align-items:center;text-align:center">
+      <div class="placeholder">D:\照片\换脸结果<br><small>新生成 JPG</small></div>
+      <div style="font-size:24px">+</div>
+      <div class="placeholder">复检清单<br><small>低相似度 / 复杂角度 / 遮挡</small></div>
+      <div style="font-size:24px">+</div>
+      <div class="placeholder">原始 JPG<br><small>始终保留</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="architecture-approved" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>认可此架构</h3>
+      <p>继续确认异常处理与验收标准。</p>
+    </div>
+  </div>
+</div>

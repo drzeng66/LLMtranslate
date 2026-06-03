@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>本地沉浸式翻译设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <h1>本地沉浸式翻译设置</h1>
+    <form id="settings-form">
+      <label>接口模式
+        <select id="endpoint-mode">
+          <option value="local">本机 127.0.0.1</option>
+          <option value="remote">远程 FRP</option>
+          <option value="custom">自定义</option>
+        </select>
+      </label>
+      <label>本机/自定义接口地址<input id="base-url" required></label>
+      <label>远程 FRP 接口地址<input id="remote-base-url" required></label>
+      <label>模型名称<input id="model" required></label>
+      <label>API Key<input id="api-key" type="password" autocomplete="off" placeholder="如服务未启用鉴权，可留空"></label>
+      <label>目标语言<input id="target-language" required></label>
+      <label>每批段落数<input id="batch-size" type="number" min="1" max="3" required></label>
+      <label>最短段落字符数<input id="min-text-length" type="number" min="1" max="200" required></label>
+      <label>单段切分字符数<input id="max-chunk-chars" type="number" min="180" max="1200" required></label>
+      <label>失败重试次数<input id="retry-count" type="number" min="1" max="8" required></label>
+      <label>请求超时毫秒<input id="timeout-ms" type="number" min="15000" max="180000" step="1000" required></label>
+      <div class="actions">
+        <button type="submit">保存设置</button>
+        <button type="button" id="reset">恢复默认值</button>
+        <button type="button" id="test-connection">测试连接</button>
+        <button type="button" id="open-document">打开文档翻译</button>
+      </div>
+    </form>
+    <pre id="status"></pre>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

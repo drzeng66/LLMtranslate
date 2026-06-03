@@ -1,0 +1,64 @@
+<h2>选择 ComfyUI 换脸实现路线</h2>
+<p class="subtitle">目标：保留藏式头饰、辫发、服装、身体和背景，仅在面部轮廓内替换五官与脸型。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a-recommended-two-stage" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:flex;flex-direction:column;gap:9px;text-align:center">
+        <div class="placeholder">ReActor 换脸</div>
+        <div>↓</div>
+        <div class="placeholder">紧贴脸部遮罩 + 轻量修复</div>
+        <div>↓</div>
+        <div class="placeholder">相似度检查 + 异常复检</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 两阶段批量方案（推荐）</h3>
+      <p>先批量换脸，再仅对面部区域轻量修复。速度快、结构稳定，最适合大量单人藏服照片。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>头饰风险低</li><li>可批量运行</li><li>便于筛选失败项</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>极端角度需复检</li><li>参考照只有半侧脸</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b-reactor-basic" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:flex;flex-direction:column;gap:9px;text-align:center">
+        <div class="placeholder">ReActor 换脸</div>
+        <div>↓</div>
+        <div class="placeholder">直接输出</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 基础快速方案</h3>
+      <p>只用主换脸节点，依赖最少、运行最快。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>安装简单</li><li>最快</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>细节较弱</li><li>边缘和肤质更容易不自然</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c-generative-inpaint" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:flex;flex-direction:column;gap:9px;text-align:center">
+        <div class="placeholder">生成式局部重绘</div>
+        <div>↓</div>
+        <div class="placeholder">参考脸身份约束</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 生成式局部重绘</h3>
+      <p>通过模型重新生成脸部，更适合少量难图，不建议作为第一轮批量方案。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>可修复复杂角度</li><li>细节潜力高</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>可能误改发型和头饰</li><li>安装和调参更复杂</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle">建议点击 A。第一轮批量处理后，仅将失败项送入更细致的复检流程。</p>
+</div>

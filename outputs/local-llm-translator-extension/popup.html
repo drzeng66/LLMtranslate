@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>本地沉浸式翻译</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <strong>本地沉浸式翻译</strong>
+      <span id="endpoint-label">检测中…</span>
+    </header>
+    <button id="translate-page" class="primary">翻译 / 暂停当前页面</button>
+    <button id="hover-translate">开启 Shift + 鼠标悬停翻译</button>
+    <button id="clear-page">清除页面译文</button>
+    <button id="document-translate">文档翻译 PDF / Word / TXT</button>
+    <button id="clear-context">清空 8080 模型上下文</button>
+    <footer>
+      <button id="options">设置</button>
+      <button id="test">测试连接</button>
+    </footer>
+    <pre id="status"></pre>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

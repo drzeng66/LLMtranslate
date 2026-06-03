@@ -1,0 +1,10 @@
+:root { color: #1f2937; font: 14px/1.45 system-ui, sans-serif; }
+body { width: 320px; margin: 0; background: #f8fafc; }
+main { padding: 14px; display: grid; gap: 10px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+header span { color: #64748b; font-size: 12px; text-align: right; }
+button { border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; padding: 10px 12px; cursor: pointer; text-align: left; }
+button:hover { background: #eff6ff; }
+button.primary { background: #e0528a; color: white; border-color: #e0528a; text-align: center; font-weight: 700; }
+footer { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+#status { min-height: 24px; max-height: 120px; overflow: auto; margin: 0; padding: 8px; border-radius: 8px; background: #eef2ff; color: #334155; white-space: pre-wrap; }

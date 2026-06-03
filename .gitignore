@@ -1,0 +1,7 @@
+# local/generated
+node_modules/
+outputs/local-llm-translator-extension/node_modules/
+work/
+.pytest_cache/
+*.log
+.DS_Store

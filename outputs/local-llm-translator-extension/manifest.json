@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "本地大模型沉浸式翻译",
+  "version": "0.2.0",
+  "description": "使用本地或远程映射的大模型实现网页、悬停段落和文档翻译。",
+  "minimum_chrome_version": "114",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://frp4.ccszxc.site:14668/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "本地沉浸式翻译",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["vendor/pdf.worker.min.mjs"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

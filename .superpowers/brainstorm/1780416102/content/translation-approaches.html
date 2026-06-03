@@ -1,0 +1,57 @@
+<h2>选择本地大模型网页翻译扩展架构</h2>
+<p class="subtitle">目标：点击扩展图标后，将网页段落按原文 + 简体中文译文的形式插入页面，不上传内容。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a-mv3-batched" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:flex;flex-direction:column;gap:9px;text-align:center">
+        <div class="placeholder">点击扩展图标</div><div>↓</div>
+        <div class="placeholder">提取可见段落并分批</div><div>↓</div>
+        <div class="placeholder">localhost:8080/v1</div><div>↓</div>
+        <div class="placeholder">插入双语译文</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · MV3 分批段落翻译（推荐）</h3>
+      <p>使用 content script 提取段落，service worker 调用本地 OpenAI 兼容接口，逐批回填页面。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>体验接近沉浸式翻译</li><li>本地接口不受网页 CORS 限制</li><li>可显示翻译进度</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>需处理动态网页</li><li>首次翻译大页面需要等待</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b-direct-page-fetch" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:flex;flex-direction:column;gap:9px;text-align:center">
+        <div class="placeholder">网页脚本</div><div>↓</div>
+        <div class="placeholder">直接请求 localhost</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 网页脚本直接请求</h3>
+      <p>结构较少，但网页安全策略和本地接口跨域规则更容易导致失败。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>代码更少</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>CORS 风险</li><li>网页可干扰执行环境</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c-side-panel-only" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:flex;flex-direction:column;gap:9px;text-align:center">
+        <div class="placeholder">侧边栏</div><div>↓</div>
+        <div class="placeholder">独立显示翻译全文</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 侧边栏全文翻译</h3>
+      <p>不修改网页 DOM，但失去原文段落旁边直接阅读译文的沉浸式体验。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>网页兼容性较高</li></ul></div>
+        <div class="cons"><h4>限制</h4><ul><li>对照阅读不够直观</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

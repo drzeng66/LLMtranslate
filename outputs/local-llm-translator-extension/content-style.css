@@ -1,0 +1,28 @@
+local-llm-translation {
+  display: block !important;
+  margin: 0.35em 0 0.9em !important;
+  padding: 0.55em 0.8em !important;
+  border-left: 3px solid #4f8cff !important;
+  background: #f3f7ff !important;
+  color: #244266 !important;
+  font: 400 0.95em/1.7 system-ui, sans-serif !important;
+}
+
+local-llm-translation[data-failed="true"] {
+  border-left-color: #d97706 !important;
+  background: #fff7ed !important;
+  color: #9a3412 !important;
+}
+
+#local-llm-progress {
+  position: fixed !important;
+  right: 18px !important;
+  bottom: 18px !important;
+  z-index: 2147483647 !important;
+  padding: 10px 14px !important;
+  border-radius: 999px !important;
+  background: #1f2937 !important;
+  color: #fff !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22) !important;
+  font: 500 13px/1.2 system-ui, sans-serif !important;
+}

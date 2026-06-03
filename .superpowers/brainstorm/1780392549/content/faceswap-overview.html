@@ -1,0 +1,57 @@
+<h2>藏服照片批量换头：目标工作流</h2>
+<p class="subtitle">先选择换头方式。服饰、身体姿态和背景尽量保留，仅处理头部区域。</p>
+
+<div class="section">
+  <div class="label">处理流程</div>
+  <div class="mockup">
+    <div class="mockup-header">D:\照片 → JPG 归一化 → ComfyUI 批量换头 → 独立输出目录 → 人工抽检</div>
+    <div class="mockup-body">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:center;text-align:center">
+        <div class="placeholder">原始照片<br><small>HEIC / PNG / JPEG</small></div>
+        <div style="font-size:28px">→</div>
+        <div class="placeholder">最高质量 JPG<br><small>转换成功后删除原格式</small></div>
+        <div style="font-size:28px">→</div>
+        <div class="placeholder">ComfyUI 输出<br><small>保留原 JPG，另存换头结果</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">请点击选择换头模式</div>
+  <div class="cards">
+    <div class="card" data-choice="a-single-face" onclick="toggleSelect(this)">
+      <div class="card-image">
+        <div style="display:flex;justify-content:center;gap:12px;align-items:center;font-size:22px">
+          <span>🙂</span><span>→</span><span>📷 📷 📷</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>A · 全部替换成同一张脸</h3>
+        <p>准备一张清晰正面照，批量应用到所有藏服照片。最适合做同一个人的写真。</p>
+      </div>
+    </div>
+    <div class="card" data-choice="b-folder-match" onclick="toggleSelect(this)">
+      <div class="card-image">
+        <div style="display:flex;justify-content:center;gap:12px;align-items:center;font-size:22px">
+          <span>🙂 🙂 🙂</span><span>→</span><span>📷 📷 📷</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>B · 多张参考脸按文件匹配</h3>
+        <p>每组照片可使用不同参考脸。灵活，但需要建立文件或文件夹匹配规则。</p>
+      </div>
+    </div>
+    <div class="card" data-choice="c-manual" onclick="toggleSelect(this)">
+      <div class="card-image">
+        <div style="display:flex;justify-content:center;gap:12px;align-items:center;font-size:22px">
+          <span>📷</span><span>→</span><span>🖱️</span><span>→</span><span>🖼️</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>C · 逐张人工选择</h3>
+        <p>遇到多人、遮挡或复杂角度时单独选择人脸。质量可控，但不适合全自动批量。</p>
+      </div>
+    </div>
+  </div>
+</div>

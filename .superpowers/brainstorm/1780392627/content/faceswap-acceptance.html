@@ -1,0 +1,49 @@
+<h2>异常处理与验收标准</h2>
+<p class="subtitle">所有破坏性操作都设置成功核验门槛。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">照片格式转换</div>
+    <div class="mockup-body">
+      <ul>
+        <li>使用最高 JPEG 质量参数输出</li>
+        <li>保留原分辨率与可用 EXIF 信息</li>
+        <li>重新读取 JPG，确认尺寸和像素有效</li>
+        <li>仅核验成功后删除对应 HEIC / PNG / JPEG</li>
+        <li>转换失败时保留原文件并写入日志</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">批量换脸</div>
+    <div class="mockup-body">
+      <ul>
+        <li>原始 JPG 永不覆盖</li>
+        <li>换脸结果写入 D:\照片\换脸结果</li>
+        <li>使用脸部遮罩避免改动头饰和辫发</li>
+        <li>生成相似度结果和失败日志</li>
+        <li>抽检正脸、半侧脸和复杂角度照片</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">已知限制</div>
+  <div class="mockup">
+    <div class="mockup-body">
+      参考照只有一张半侧脸，因此反方向侧脸、面部遮挡、低光或头饰覆盖脸部边缘的照片，可能需要复检或单独调整。
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="acceptance-approved" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>认可验收标准</h3>
+      <p>确认后整理设计文档，再进入安装和执行计划。</p>
+    </div>
+  </div>
+</div>

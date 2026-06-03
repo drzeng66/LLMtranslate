@@ -1,0 +1,32 @@
+{
+  "targets": 30,
+  "generated_jpg": 30,
+  "qa_records": 30,
+  "errors": [],
+  "review": [
+    {
+      "name": "IMG_9174.jpg",
+      "status": "复检",
+      "changed_percent": 0.0897,
+      "bbox_width": 154,
+      "bbox_height": 156,
+      "diff_bbox": "(1047, 2834, 1201, 2990)"
+    },
+    {
+      "name": "IMG_9175.jpg",
+      "status": "复检",
+      "changed_percent": 0.1459,
+      "bbox_width": 175,
+      "bbox_height": 177,
+      "diff_bbox": "(1195, 2707, 1370, 2884)"
+    },
+    {
+      "name": "IMG_9176.jpg",
+      "status": "复检",
+      "changed_percent": 0.1173,
+      "bbox_width": 162,
+      "bbox_height": 163,
+      "diff_bbox": "(1677, 2459, 1839, 2622)"
+    }
+  ]
+}

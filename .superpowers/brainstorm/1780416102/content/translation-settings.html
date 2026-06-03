@@ -1,0 +1,59 @@
+<h2>设置与异常处理确认</h2>
+<p class="subtitle">默认使用已检测到的本地 OpenAI 兼容接口。扩展不访问云端服务。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">扩展设置页</div>
+    <div class="mockup-body">
+      <label>本地接口地址</label>
+      <input class="mock-input" value="http://127.0.0.1:8080/v1">
+      <br><br>
+      <label>模型名称</label>
+      <input class="mock-input" value="gemma.gguf">
+      <br><br>
+      <label>目标语言</label>
+      <input class="mock-input" value="简体中文">
+      <br><br>
+      <label>每批段落数</label>
+      <input class="mock-input" value="4">
+      <br><br>
+      <button class="mock-button">测试本地连接</button>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">异常处理</div>
+    <div class="mockup-body">
+      <ul>
+        <li>接口未启动：提示检查 <strong>127.0.0.1:8080</strong></li>
+        <li>模型返回异常：保留原文并标记失败段落</li>
+        <li>再次点击：可重新尝试失败项或移除译文</li>
+        <li>动态网页：首版只处理点击时已经存在的段落</li>
+        <li>密码框、输入框、代码块、导航栏和短文本默认跳过</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">权限边界</div>
+  <div class="mockup">
+    <div class="mockup-body">
+      <ul>
+        <li>仅在用户点击扩展图标时读取当前标签页正文</li>
+        <li>只向本机 <strong>http://127.0.0.1:8080</strong> 发送待翻译段落</li>
+        <li>不保存网页全文，不调用外部云端接口</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="settings-approved" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>认可设置与异常处理</h3>
+      <p>确认后整理设计文档，再进入实施计划。</p>
+    </div>
+  </div>
+</div>
