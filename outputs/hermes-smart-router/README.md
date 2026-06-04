@@ -34,6 +34,8 @@ C:\Users\zengxiaofeng\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe 
 
 走 5.5：多模态/图片、深度推理、复杂架构、复杂调试、跨文件重构、高风险医学/法律/财务判断、长上下文接近本地上限。
 
+医生工作站、HIS/LIS/PACS、医嘱、检验检查、报告查询、危急值、费用汇总等医疗系统/查询/操作类任务默认走 5.5。只有非常明确的简单文本子任务（如单纯翻译、格式整理、提取字段、生成 JSON、普通总结）才走本地。
+
 本地返回上下文超限、429、5xx 或超时，会自动 fallback 到 5.5；5.5 优先尝试 `openai-codex`，如果 OpenAI/ChatGPT OAuth、协议、限流或模型错误导致失败，会继续尝试 `Api.apikey.fun`。
 
 ## 兼容性说明
@@ -41,4 +43,5 @@ C:\Users\zengxiaofeng\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe 
 - Hermes 经常用 `stream=true` 调用模型；Router 内部为了自动 fallback 会先用非流式请求后端，再转换成 OpenAI SSE 流式响应返回给 Hermes。
 - `openai-codex` 使用 Hermes 的 `codex_responses` 协议适配，不是普通 `/chat/completions`。
 - 路由判断优先看用户消息，不会因为 Hermes 系统提示或工具说明里出现“图像/图片”等词就误判为多模态任务。
+- HIS/LIS/PACS/CT/MRI 等英文缩写使用单词边界匹配，避免把普通英文单词里的 `his`、`ct` 误判为医疗系统任务。
 - 如需临时排错，可设置环境变量 `HERMES_ROUTER_DEBUG_LOG=某个日志路径`。日志仅记录路由、状态码、消息数量、工具数量等脱敏元数据，不记录正文和密钥。

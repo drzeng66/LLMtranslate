@@ -41,6 +41,29 @@ class RouterDecisionTests(unittest.TestCase):
         self.assertEqual(decision.route, "strong")
         self.assertIn("keyword", decision.reason)
 
+    def test_doctor_workstation_query_routes_strong(self):
+        payload = {"messages": [{"role": "user", "content": "医生工作站如何查询检验报告？"}]}
+        decision = choose_route(payload)
+        self.assertEqual(decision.route, "strong")
+        self.assertIn("medical-system", decision.reason)
+
+    def test_lis_critical_value_routes_strong(self):
+        payload = {"messages": [{"role": "user", "content": "LIS 查询危急值流程怎么操作？"}]}
+        decision = choose_route(payload)
+        self.assertEqual(decision.route, "strong")
+        self.assertIn("medical-system", decision.reason)
+
+    def test_medical_record_plain_translation_routes_local(self):
+        payload = {"messages": [{"role": "user", "content": "把这段病历翻译成英文：患者今日无发热。"}]}
+        decision = choose_route(payload)
+        self.assertEqual(decision.route, "local")
+
+    def test_lab_result_judgement_routes_strong(self):
+        payload = {"messages": [{"role": "user", "content": "帮我判断这个检验结果是否异常：白细胞 18。"}]}
+        decision = choose_route(payload)
+        self.assertEqual(decision.route, "strong")
+        self.assertIn("medical-system", decision.reason)
+
     def test_multimodal_content_routes_strong(self):
         payload = {"messages": [{"role": "user", "content": [{"type": "text", "text": "分析这张图"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}]}]}
         decision = choose_route(payload)

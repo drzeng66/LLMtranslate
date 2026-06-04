@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -38,6 +39,25 @@ STRONG_KEYWORDS = [
 LOCAL_KEYWORDS = [
     "翻译", "translate", "总结", "summary", "summarize", "改写", "润色", "提取", "分类",
     "json", "rss", "新闻", "段落", "邮件", "标题", "摘要",
+]
+
+MEDICAL_SYSTEM_KEYWORDS = [
+    "医生工作站", "护士工作站", "工作站", "his", "lis", "pacs", "emr", "电子病历", "病历",
+    "医嘱", "处方", "门诊", "住院", "患者", "病人", "检验", "检查", "化验", "报告查询",
+    "检验报告", "检查报告", "化验单", "影像报告", "危急值", "ct", "mri", "超声", "放射",
+    "病人费用", "医疗费用", "费用汇总", "诊间", "病区", "住院号", "门诊号",
+]
+
+MEDICAL_SYSTEM_FORCE_STRONG_KEYWORDS = [
+    "医生工作站", "护士工作站", "工作站", "his", "lis", "pacs", "emr", "医嘱", "处方",
+    "查询", "检索", "查找", "打开", "操作", "流程", "步骤", "按钮", "界面", "控件",
+    "自动化", "脚本", "判断", "诊断", "异常", "危急值", "报告查询", "检验报告",
+    "检查报告", "影像报告", "费用", "汇总", "审核", "开立", "停止", "撤销",
+]
+
+MEDICAL_SIMPLE_LOCAL_KEYWORDS = [
+    "翻译", "translate", "总结", "summary", "summarize", "改写", "润色", "提取", "分类",
+    "json", "格式", "排版", "标题", "摘要", "字段",
 ]
 
 
@@ -87,6 +107,18 @@ def iter_message_text_and_media(messages: Iterable[Dict[str, Any]], roles: set[s
     return "\n".join(parts), has_media
 
 
+def first_keyword(lowered_text: str, keywords: Iterable[str]) -> str | None:
+    for keyword in keywords:
+        lowered_keyword = keyword.lower()
+        if lowered_keyword.isascii() and lowered_keyword.replace("-", "").isalnum():
+            if re.search(rf"(?<![a-z0-9]){re.escape(lowered_keyword)}(?![a-z0-9])", lowered_text):
+                return keyword
+            continue
+        if lowered_keyword in lowered_text:
+            return keyword
+    return None
+
+
 def choose_route(payload: Dict[str, Any]) -> RouteDecision:
     model = str(payload.get("model") or "").lower()
     if model.endswith(":strong") or model in {"strong", "gpt-5.5", "5.5"}:
@@ -101,6 +133,15 @@ def choose_route(payload: Dict[str, Any]) -> RouteDecision:
     lowered = text_for_intent.lower()
     if user_has_media or all_has_media:
         return RouteDecision("strong", "multimodal-content")
+
+    medical_hit = first_keyword(lowered, MEDICAL_SYSTEM_KEYWORDS)
+    if medical_hit:
+        force_hit = first_keyword(lowered, MEDICAL_SYSTEM_FORCE_STRONG_KEYWORDS)
+        simple_hit = first_keyword(lowered, MEDICAL_SIMPLE_LOCAL_KEYWORDS)
+        if simple_hit and not force_hit:
+            return RouteDecision("local", f"medical-simple:{simple_hit}")
+        return RouteDecision("strong", f"medical-system:{force_hit or medical_hit}")
+
     for keyword in STRONG_KEYWORDS:
         if keyword.lower() in lowered:
             return RouteDecision("strong", f"keyword:{keyword}")
