@@ -32,12 +32,34 @@ test("single translation request uses low latency defaults", () => {
   assert.equal(req.max_tokens, 384);
 });
 
+test("document translation request uses medical long-form settings", () => {
+  const req = buildChatRequest(
+    { ...DEFAULT_SETTINGS, model: "gemma.gguf" },
+    [{ id: "doc-1", text: "Patients with acute myocardial infarction were enrolled in the study." }],
+    { mode: "document", maxTokens: 4096 },
+  );
+  assert.equal(req.model, "gemma.gguf");
+  assert.equal(req.temperature, 0);
+  assert.equal(req.stream, false);
+  assert.equal(req.max_tokens, 4096);
+  assert.match(req.messages[0].content, /medical academic PDF/i);
+  assert.match(req.messages[0].content, /Do not summarize/i);
+  assert.doesNotMatch(req.messages[0].content, /Return JSON array/i);
+});
+
 test("document segmentation avoids oversized chunks and preserves ids", () => {
   const text = Array.from({ length: 80 }, (_, i) => `Sentence ${i + 1} has enough English text for translation.`).join(" ");
   const chunks = splitDocumentIntoSegments(text, { maxChars: 500, minChars: 120 });
   assert.ok(chunks.length > 1);
   assert.ok(chunks.every((item, index) => item.id === `doc-${index + 1}`));
   assert.ok(chunks.every((item) => item.text.length <= 650));
+});
+
+test("document segmentation supports larger literature chunks", () => {
+  const text = Array.from({ length: 140 }, (_, i) => `Clinical sentence ${i + 1} reports treatment outcomes and adverse events.`).join(" ");
+  const chunks = splitDocumentIntoSegments(text, { maxChars: 2200, minChars: 600 });
+  assert.ok(chunks.length > 1);
+  assert.ok(chunks.every((item) => item.text.length <= 2860));
 });
 
 test("docx text xml is converted into paragraph text", () => {

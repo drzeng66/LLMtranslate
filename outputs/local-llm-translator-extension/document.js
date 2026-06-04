@@ -1,5 +1,5 @@
 import { splitDocumentIntoSegments } from "./lib/translator-core.js";
-import { buildBilingualRows, buildBilingualHtml } from "./lib/document-renderer.js";
+import { buildBilingualColumns, buildBilingualHtml } from "./lib/document-renderer.js";
 import * as pdfjsLib from "./vendor/pdf.min.mjs";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs");
@@ -19,26 +19,58 @@ let sourceText = "";
 let segments = [];
 let translations = [];
 let cancelled = false;
+let sourcePreviewBody = null;
+let translationPreviewBody = null;
 
 function setStatus(text) { status.textContent = text; }
 
+function currentMaxChars() {
+  return Number(maxCharsInput.value) || 2200;
+}
+
 function renderBilingualPreview() {
-  const rows = buildBilingualRows(segments, translations);
+  const columns = buildBilingualColumns(segments, translations);
   preview.innerHTML = "";
-  preview.className = "bilingual-preview";
-  for (const row of rows) {
-    const box = document.createElement("section");
-    box.className = `bilingual-row ${row.status}`;
-    box.dataset.id = row.id;
-    box.innerHTML = `
-      <div class="row-index">${row.index}</div>
-      <article class="source-pane"><h2>原文</h2><p></p></article>
-      <article class="translation-pane"><h2>译文</h2><p></p></article>
-    `;
-    box.querySelector(".source-pane p").textContent = row.source;
-    box.querySelector(".translation-pane p").textContent = row.translation;
-    preview.appendChild(box);
+  preview.className = `bilingual-preview ${columns.status}`;
+
+  const layout = document.createElement("section");
+  layout.className = `full-bilingual-layout ${columns.status}`;
+
+  const sourcePane = document.createElement("article");
+  sourcePane.className = "source-pane";
+  const sourceTitle = document.createElement("h2");
+  sourceTitle.textContent = "原文全文";
+  const sourceBody = document.createElement("div");
+  sourceBody.className = "full-text";
+  sourceBody.textContent = columns.sourceText;
+  sourcePreviewBody = sourceBody;
+  sourcePane.append(sourceTitle, sourceBody);
+
+  const translationPane = document.createElement("article");
+  translationPane.className = "translation-pane";
+  const translationTitle = document.createElement("h2");
+  translationTitle.textContent = "译文全文";
+  const translationBody = document.createElement("div");
+  translationBody.className = "full-text";
+  translationBody.textContent = columns.translationText;
+  translationPreviewBody = translationBody;
+  translationPane.append(translationTitle, translationBody);
+
+  layout.append(sourcePane, translationPane);
+  preview.appendChild(layout);
+}
+
+function updateTranslationPreview() {
+  if (!sourcePreviewBody || !translationPreviewBody) {
+    renderBilingualPreview();
+    return;
   }
+  const columns = buildBilingualColumns(segments, translations);
+  preview.className = `bilingual-preview ${columns.status}`;
+  const layout = preview.querySelector(".full-bilingual-layout");
+  if (layout) layout.className = `full-bilingual-layout ${columns.status}`;
+  sourcePreviewBody.textContent = columns.sourceText;
+  translationPreviewBody.textContent = columns.translationText;
 }
 
 async function readFile(file) {
@@ -52,10 +84,12 @@ async function readFile(file) {
 }
 
 function buildSegments() {
-  const maxChars = Number(maxCharsInput.value) || 900;
-  segments = splitDocumentIntoSegments(sourceText, { maxChars, minChars: 180 });
+  const maxChars = currentMaxChars();
+  segments = splitDocumentIntoSegments(sourceText, { maxChars, minChars: 600 });
   translations = [];
   cancelled = false;
+  sourcePreviewBody = null;
+  translationPreviewBody = null;
   renderBilingualPreview();
   translateBtn.disabled = !segments.length;
   downloadBtn.disabled = true;
@@ -83,33 +117,30 @@ async function readDocx(file) {
 }
 
 async function translateDocument() {
+  const maxChars = currentMaxChars();
   cancelled = false;
   translateBtn.disabled = true;
   stopBtn.disabled = false;
   downloadBtn.disabled = true;
   translations = [];
+  renderBilingualPreview();
   for (let index = 0; index < segments.length; index += 1) {
     if (cancelled) break;
     const segment = segments[index];
-    const rowNode = preview.querySelector(`[data-id="${segment.id}"]`);
-    const node = rowNode?.querySelector(".translation-pane p");
-    rowNode?.classList.remove("failed", "done", "pending");
-    rowNode?.classList.add("pending");
-    node.textContent = `正在翻译 ${index + 1} / ${segments.length}…`;
     setStatus(`正在翻译：${index + 1} / ${segments.length}\n${currentFile?.name || "文档"}`);
     try {
-      const response = await chrome.runtime.sendMessage({ type: "TRANSLATE_BATCH", items: [segment] });
+      const response = await chrome.runtime.sendMessage({
+        type: "TRANSLATE_BATCH",
+        items: [segment],
+        options: { mode: "document", maxChunkChars: maxChars, maxTokens: 4096 },
+      });
       if (!response?.ok) throw new Error(response?.error || "模型请求失败");
       const translation = response.translations?.[0]?.translation || "";
       translations.push({ ...segment, translation });
-      rowNode?.classList.remove("pending", "failed");
-      rowNode?.classList.add("done");
-      node.textContent = translation;
+      updateTranslationPreview();
     } catch (error) {
       translations.push({ ...segment, translation: `翻译失败：${error.message}` });
-      rowNode?.classList.remove("pending", "done");
-      rowNode?.classList.add("failed");
-      node.textContent = `翻译失败：${error.message}`;
+      updateTranslationPreview();
     }
   }
   stopBtn.disabled = true;
@@ -120,8 +151,8 @@ async function translateDocument() {
 
 function downloadBilingualHtml() {
   const name = (currentFile?.name || "document").replace(/\.[^.]+$/, "");
-  const rows = buildBilingualRows(segments, translations);
-  const content = buildBilingualHtml({ title: currentFile?.name || "中英文对照文档", rows });
+  const columns = buildBilingualColumns(segments, translations);
+  const content = buildBilingualHtml({ title: currentFile?.name || "中英文对照文档", columns });
   const blob = new Blob([content], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

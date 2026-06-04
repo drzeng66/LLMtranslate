@@ -8,6 +8,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   batchSize: 1,
   minTextLength: 12,
   maxChunkChars: 360,
+  documentMaxChunkChars: 2200,
+  documentMaxTokens: 4096,
   retryCount: 3,
   timeoutMs: 45000,
   hoverEnabled: true,
@@ -40,6 +42,8 @@ export function normalizeSettings(settings = {}) {
     batchSize: clampInt(merged.batchSize, 1, 3, 1),
     minTextLength: clampInt(merged.minTextLength, 1, 200, 12),
     maxChunkChars: clampInt(merged.maxChunkChars, 180, 1200, 360),
+    documentMaxChunkChars: clampInt(merged.documentMaxChunkChars, 900, 3000, 2200),
+    documentMaxTokens: clampInt(merged.documentMaxTokens, 1024, 8192, 4096),
     retryCount: clampInt(merged.retryCount, 1, 8, 3),
     timeoutMs: clampInt(merged.timeoutMs, 15000, 180000, 45000),
   };
@@ -90,22 +94,32 @@ export function authHeaders(settings) {
   return headers;
 }
 
-export function buildChatRequest(settings, items) {
+export function buildChatRequest(settings, items, options = {}) {
   const normalized = normalizeSettings(settings);
+  const mode = options.mode || "page";
+  const maxTokens = clampInt(
+    options.maxTokens,
+    128,
+    8192,
+    mode === "document" ? normalized.documentMaxTokens : 384,
+  );
   const targetLanguage =
     normalized.targetLanguage === "简体中文"
       ? "简体中文 (Simplified Chinese)"
       : normalized.targetLanguage;
   if (items.length === 1) {
+    const systemPrompt = mode === "document"
+      ? `Translate the user's medical academic PDF/document text into ${targetLanguage}. Return only the translated Chinese text. Do not summarize, omit, explain, add markdown, add quotes, or repeat the original text. Preserve medical terminology, drug names, abbreviations, numbers, headings, lists, table-like structure, citations, and paragraph meaning accurately.`
+      : `Translate the user's text into ${targetLanguage}. Return only the translated Chinese text. Do not return JSON, markdown, quotes, explanations, IDs, or the original text. Preserve medical terms accurately.`;
     return {
       model: normalized.model,
       temperature: 0,
       stream: false,
-      max_tokens: 384,
+      max_tokens: maxTokens,
       messages: [
         {
           role: "system",
-          content: `Translate the user's text into ${targetLanguage}. Return only the translated Chinese text. Do not return JSON, markdown, quotes, explanations, IDs, or the original text. Preserve medical terms accurately.`,
+          content: systemPrompt,
         },
         {
           role: "user",
@@ -118,11 +132,13 @@ export function buildChatRequest(settings, items) {
     model: normalized.model,
     temperature: 0,
     stream: false,
-    max_tokens: Math.min(2048, Math.max(512, items.length * 512)),
+    max_tokens: mode === "document" ? Math.min(8192, Math.max(maxTokens, items.length * 1024)) : Math.min(2048, Math.max(512, items.length * 512)),
     messages: [
       {
         role: "system",
-        content: `Translate each input item into ${targetLanguage}. Return JSON array only, with objects containing id and translation. No markdown, no explanation. Preserve medical terminology accurately.`,
+        content: mode === "document"
+          ? `Translate each medical academic document item into ${targetLanguage}. Return JSON array only, with objects containing id and translation. No markdown, no explanation. Preserve medical terminology, numbers, headings, citations, and table-like structure accurately.`
+          : `Translate each input item into ${targetLanguage}. Return JSON array only, with objects containing id and translation. No markdown, no explanation. Preserve medical terminology accurately.`,
       },
       {
         role: "user",

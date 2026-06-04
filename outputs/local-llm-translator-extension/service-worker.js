@@ -54,7 +54,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "TRANSLATE_BATCH") {
-    translateBatch(message.items)
+    translateBatch(message.items, message.options || {})
       .then((translations) => sendResponse({ ok: true, translations }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -84,24 +84,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
-async function translateBatch(items) {
-  if (items.length === 1) return [await translateItemWithChunks(items[0])];
+async function translateBatch(items, options = {}) {
+  if (items.length === 1) return [await translateItemWithChunks(items[0], options)];
   const translatedItems = [];
-  for (const item of items) translatedItems.push(await translateItemWithChunks(item));
+  for (const item of items) translatedItems.push(await translateItemWithChunks(item, options));
   return translatedItems;
 }
 
-async function translateItemWithChunks(item) {
+async function translateItemWithChunks(item, options = {}) {
   const settings = await getSettings();
-  const chunks = splitTextForTranslation(item.text, settings.maxChunkChars);
+  const chunkLimit = Number(options.maxChunkChars)
+    || (options.mode === "document" ? settings.documentMaxChunkChars : settings.maxChunkChars);
+  const chunks = splitTextForTranslation(item.text, chunkLimit);
   if (chunks.length === 1) {
-    const [translation] = await translateOneChunk({ ...item, text: chunks[0] }, settings);
+    const [translation] = await translateOneChunk({ ...item, text: chunks[0] }, settings, options);
     return { id: item.id, translation: translation.translation };
   }
   const translatedChunks = [];
   for (let index = 0; index < chunks.length; index += 1) {
     const chunkItem = { id: item.id, text: chunks[index] };
-    const [translation] = await translateOneChunk(chunkItem, settings);
+    const [translation] = await translateOneChunk(chunkItem, settings, options);
     translatedChunks.push(translation.translation);
   }
   return { id: item.id, translation: joinTranslatedChunks(translatedChunks) };
@@ -116,13 +118,13 @@ function joinTranslatedChunks(chunks) {
   }, "");
 }
 
-async function translateOneChunk(itemsOrItem, knownSettings) {
+async function translateOneChunk(itemsOrItem, knownSettings, options = {}) {
   const items = Array.isArray(itemsOrItem) ? itemsOrItem : [itemsOrItem];
   const settings = knownSettings || (await getSettings());
   let lastError;
   for (let attempt = 1; attempt <= settings.retryCount; attempt += 1) {
     try {
-      return await requestTranslationOnce(items, settings);
+      return await requestTranslationOnce(items, settings, options);
     } catch (error) {
       lastError = error;
     }
@@ -130,7 +132,7 @@ async function translateOneChunk(itemsOrItem, knownSettings) {
   throw lastError;
 }
 
-async function requestTranslationOnce(items, settings) {
+async function requestTranslationOnce(items, settings, options = {}) {
   const endpoint = assertAllowedEndpoint(chatEndpoint(settings.baseUrl));
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), settings.timeoutMs);
@@ -138,7 +140,7 @@ async function requestTranslationOnce(items, settings) {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: authHeaders(settings),
-      body: JSON.stringify(buildChatRequest(settings, items)),
+      body: JSON.stringify(buildChatRequest(settings, items, options)),
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`模型接口返回 HTTP ${response.status}`);

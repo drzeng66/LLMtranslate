@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildBilingualRows,
+  buildBilingualColumns,
   buildBilingualHtml,
 } from "../lib/document-renderer.js";
 
-test("buildBilingualRows keeps full source order and pairs translations", () => {
+test("buildBilingualColumns builds full source and full translation columns", () => {
   const segments = [
     { id: "doc-1", text: "First paragraph." },
     { id: "doc-2", text: "Second paragraph." },
@@ -14,26 +14,33 @@ test("buildBilingualRows keeps full source order and pairs translations", () => 
     { id: "doc-1", translation: "第一段。" },
     { id: "doc-2", translation: "第二段。" },
   ];
-  const rows = buildBilingualRows(segments, translations);
-  assert.deepEqual(rows, [
-    { id: "doc-1", index: 1, source: "First paragraph.", translation: "第一段。", status: "done" },
-    { id: "doc-2", index: 2, source: "Second paragraph.", translation: "第二段。", status: "done" },
-  ]);
+  const columns = buildBilingualColumns(segments, translations);
+  assert.equal(columns.sourceText, "First paragraph.\n\nSecond paragraph.");
+  assert.equal(columns.translationText, "第一段。\n\n第二段。");
+  assert.equal(columns.status, "done");
 });
 
-test("buildBilingualRows shows pending rows instead of segment cards", () => {
-  const rows = buildBilingualRows([{ id: "doc-1", text: "Full source." }], []);
-  assert.equal(rows[0].source, "Full source.");
-  assert.equal(rows[0].translation, "待翻译");
-  assert.equal(rows[0].status, "pending");
+test("buildBilingualColumns preserves full source and pending translation placeholders", () => {
+  const columns = buildBilingualColumns([{ id: "doc-1", text: "Full source." }], []);
+  assert.equal(columns.sourceText, "Full source.");
+  assert.equal(columns.translationText, "【1】待翻译");
+  assert.equal(columns.status, "pending");
 });
 
-test("buildBilingualHtml creates a complete side-by-side document and escapes html", () => {
+test("buildBilingualColumns keeps failed paragraphs in the full translation column", () => {
+  const columns = buildBilingualColumns(
+    [{ id: "doc-1", text: "Source paragraph." }],
+    [{ id: "doc-1", translation: "翻译失败：model response content is empty" }],
+  );
+  assert.match(columns.translationText, /【1】该段翻译失败/);
+  assert.match(columns.translationText, /model response content is empty/);
+  assert.equal(columns.status, "failed");
+});
+
+test("buildBilingualHtml creates two full-length side-by-side columns and escapes html", () => {
   const html = buildBilingualHtml({
     title: "Paper <Title>",
-    rows: [
-      { id: "doc-1", index: 1, source: "A < B", translation: "甲 < 乙", status: "done" },
-    ],
+    columns: { sourceText: "A < B\n\nC", translationText: "甲 < 乙\n\n丙", status: "done", translatedCount: 2, totalCount: 2 },
   });
   assert.match(html, /<!doctype html>/i);
   assert.match(html, /class="bilingual-document"/);
@@ -42,4 +49,5 @@ test("buildBilingualHtml creates a complete side-by-side document and escapes ht
   assert.match(html, /Paper &lt;Title&gt;/);
   assert.match(html, /A &lt; B/);
   assert.match(html, /甲 &lt; 乙/);
+  assert.doesNotMatch(html, /class="bilingual-row"/);
 });

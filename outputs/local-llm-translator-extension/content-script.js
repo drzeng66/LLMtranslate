@@ -11,6 +11,7 @@
     cancelled: false,
     hoverEnabled: false,
     hoverBusy: false,
+    lastHoverTarget: null,
   };
 
   const skippedTags = new Set([
@@ -163,7 +164,7 @@
   }
 
   async function translateHoveredNode(event) {
-    if (!state.hoverEnabled || !event.shiftKey || state.hoverBusy) return;
+    if (!state.hoverEnabled || !event.ctrlKey || state.hoverBusy) return;
     const settings = await chrome.storage.local.get({ minTextLength: 12 });
     const node = nearestTranslatableNode(event.target, settings.minTextLength);
     if (!node || node.dataset.localLlmHoverTranslated === "true") return;
@@ -183,8 +184,21 @@
     }
   }
 
-  document.addEventListener("mouseover", (event) => {
+  function rememberPointerTarget(event) {
+    state.lastHoverTarget = event.target;
+  }
+
+  function handleHoverEvent(event) {
+    rememberPointerTarget(event);
     translateHoveredNode(event).catch((error) => showError(error.message));
+  }
+
+  document.addEventListener("mouseover", handleHoverEvent, true);
+  document.addEventListener("mousemove", handleHoverEvent, true);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Control" && state.lastHoverTarget) {
+      translateHoveredNode({ target: state.lastHoverTarget, ctrlKey: true }).catch((error) => showError(error.message));
+    }
   }, true);
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -194,7 +208,7 @@
     }
     if (message.type === "ENABLE_HOVER_TRANSLATION") {
       state.hoverEnabled = true;
-      updateProgress("已开启：按住 Shift 并把鼠标移到段落上即可翻译该段");
+      updateProgress("已开启：按住 Ctrl 并把鼠标移到段落上即可翻译该段");
       sendResponse({ ok: true });
       return false;
     }
