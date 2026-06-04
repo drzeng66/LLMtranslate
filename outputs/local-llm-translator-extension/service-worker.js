@@ -95,6 +95,24 @@ async function translateItemWithChunks(item, options = {}) {
   const settings = await getSettings();
   const chunkLimit = Number(options.maxChunkChars)
     || (options.mode === "document" ? settings.documentMaxChunkChars : settings.maxChunkChars);
+  const chunkLimits = options.mode === "document" ? documentFallbackChunkLimits(chunkLimit) : [chunkLimit];
+  let lastError;
+  for (const limit of chunkLimits) {
+    try {
+      return await translateItemWithChunkLimit(item, settings, options, limit);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function documentFallbackChunkLimits(initialLimit) {
+  return [...new Set([initialLimit, 1200, 800, 500])]
+    .filter((limit) => Number.isFinite(limit) && limit > 0 && limit <= initialLimit);
+}
+
+async function translateItemWithChunkLimit(item, settings, options, chunkLimit) {
   const chunks = splitTextForTranslation(item.text, chunkLimit);
   if (chunks.length === 1) {
     const [translation] = await translateOneChunk({ ...item, text: chunks[0] }, settings, options);

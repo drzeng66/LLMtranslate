@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const documentJs = readFileSync(new URL("../document.js", import.meta.url), "utf8");
 const documentHtml = readFileSync(new URL("../document.html", import.meta.url), "utf8");
+const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
 
 test("document translator sends optimized document options to the background worker", () => {
   assert.match(documentJs, /mode:\s*"document"/);
@@ -26,4 +27,11 @@ test("document preview does not rebuild the full two-column DOM after every tran
   assert.ok(loopMatch);
   assert.doesNotMatch(loopMatch[0], /renderBilingualPreview\(\)/);
   assert.match(documentJs, /updateTranslationPreview\(\)/);
+});
+
+test("document translation falls back to smaller chunks before failing a paragraph", () => {
+  assert.match(serviceWorker, /documentFallbackChunkLimits/);
+  assert.match(serviceWorker, /options\.mode === "document"/);
+  assert.match(serviceWorker, /for \(const limit of chunkLimits\)/);
+  assert.match(serviceWorker, /1200,\s*800,\s*500/);
 });
