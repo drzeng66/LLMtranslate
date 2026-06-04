@@ -173,7 +173,7 @@ async function requestOpenAiChatOnce(items, settings, options = {}) {
       body: JSON.stringify(buildChatRequest(settings, items, options)),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`模型接口返回 HTTP ${response.status}`);
+    if (!response.ok) throw new Error(formatHttpError(response.status, "模型接口"));
     return extractTranslations(await response.json(), new Set(items.map((item) => item.id)));
   } catch (error) {
     if (error.name === "AbortError") throw new Error(`单段翻译超过 ${Math.round(settings.timeoutMs / 1000)} 秒，已停止`);
@@ -194,7 +194,7 @@ async function requestNativeCompletionOnce(item, settings, options = {}) {
       body: JSON.stringify(buildCompletionRequest(settings, item, options)),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`llama.cpp 原生接口返回 HTTP ${response.status}`);
+    if (!response.ok) throw new Error(formatHttpError(response.status, "llama.cpp 原生接口"));
     return extractCompletionTranslation(await response.json(), item.id);
   } catch (error) {
     if (error.name === "AbortError") throw new Error(`原生 completion 翻译超过 ${Math.round(settings.timeoutMs / 1000)} 秒，已停止`);
@@ -229,21 +229,28 @@ async function listModels() {
 }
 
 async function testConnection() {
+  const settings = await getSettings();
+  let models = [];
+  let modelsError = null;
   try {
-    return await listModels();
-  } catch (modelsError) {
-    const settings = await getSettings();
-    try {
-      await testMinimalChatCompletion();
-      return [`模型列表接口不可用，但聊天接口可用：${settings.model}`, `原始检测错误：${modelsError.message}`];
-    } catch (chatError) {
-      await testMinimalNativeCompletion();
-      return [
-        `OpenAI /v1 接口不可用，但 llama.cpp 原生 completion 接口可用：${settings.model}`,
-        `模型列表错误：${modelsError.message}`,
-        `聊天接口错误：${chatError.message}`,
-      ];
-    }
+    models = await listModels();
+  } catch (error) {
+    modelsError = error;
+  }
+
+  try {
+    await testMinimalChatCompletion();
+    return models.length
+      ? [`模型列表可用，正在验证真实翻译请求：通过`, ...models]
+      : [`模型列表接口不可用，但聊天接口可用：${settings.model}`, `模型列表错误：${modelsError?.message || "未返回模型列表"}`];
+  } catch (chatError) {
+    if (!shouldTryNativeCompletion(chatError)) throw chatError;
+    await testMinimalNativeCompletion();
+    return [
+      `OpenAI /v1 接口不可用，但 llama.cpp 原生 completion 接口可用：${settings.model}`,
+      `模型列表：${models.length ? models.join(", ") : modelsError?.message || "未返回模型列表"}`,
+      `聊天接口错误：${chatError.message}`,
+    ];
   }
 }
 
@@ -255,7 +262,7 @@ async function testMinimalChatCompletion() {
     headers: authHeaders(settings),
     body: JSON.stringify(buildChatRequest(settings, [{ id: "connection-test", text: "Say OK." }], { maxTokens: 32 })),
   });
-  if (!response.ok) throw new Error(`模型接口返回 HTTP ${response.status}`);
+  if (!response.ok) throw new Error(formatHttpError(response.status, "模型接口"));
   const payload = await response.json();
   extractTranslations(payload, new Set(["connection-test"]));
   return true;
@@ -269,7 +276,7 @@ async function testMinimalNativeCompletion() {
     headers: authHeaders(settings),
     body: JSON.stringify(buildCompletionRequest(settings, { id: "connection-test", text: "Say OK." }, { maxTokens: 32 })),
   });
-  if (!response.ok) throw new Error(`llama.cpp 原生接口返回 HTTP ${response.status}`);
+  if (!response.ok) throw new Error(formatHttpError(response.status, "llama.cpp 原生接口"));
   extractCompletionTranslation(await response.json(), "connection-test");
   return true;
 }
@@ -280,4 +287,9 @@ async function clearServerContext() {
   const response = await fetch(endpoint, { method: "POST", headers: authHeaders(settings) });
   if (!response.ok) throw new Error(`清空上下文失败 HTTP ${response.status}；确认启动参数包含 --slot-save-path`);
   return await response.json().catch(() => ({}));
+}
+
+function formatHttpError(status, label) {
+  if (status === 401) return `${label}返回 HTTP 401：API Key 缺失或不正确，请在插件设置里填写 llama-server 启动参数 --api-key 后面的值`;
+  return `${label}返回 HTTP ${status}`;
 }

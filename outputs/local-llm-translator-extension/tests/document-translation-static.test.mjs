@@ -50,12 +50,15 @@ test("connection test falls back to native llama.cpp completion when OpenAI endp
   assert.match(serviceWorker, /testMinimalNativeCompletion/);
   assert.match(serviceWorker, /原生 completion 接口可用/);
   assert.match(serviceWorker, /listModels\(\)/);
+  assert.match(serviceWorker, /模型列表可用，正在验证真实翻译请求/);
 });
 
 test("translation requests fall back to native llama.cpp completion after OpenAI API errors", () => {
   assert.match(serviceWorker, /requestNativeCompletionOnce/);
   assert.match(serviceWorker, /shouldTryNativeCompletion/);
   assert.match(serviceWorker, /completionEndpoint/);
+  assert.match(serviceWorker, /formatHttpError/);
+  assert.match(serviceWorker, /API Key/);
 });
 
 test("document page has human-friendly errors and a failed-segment retry action", () => {
