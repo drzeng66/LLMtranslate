@@ -16,23 +16,24 @@ import {
 
 test("default settings allow local and configured frp endpoint", () => {
   assert.equal(DEFAULT_SETTINGS.baseUrl, "http://127.0.0.1:8080/v1");
-  assert.equal(DEFAULT_SETTINGS.remoteBaseUrl, "http://frp4.ccszxc.site:14668/v1");
+  assert.equal(DEFAULT_SETTINGS.remoteBaseUrl, "http://frp4.ccszxc.site:14688/v1");
   assert.equal(endpointAllowed("http://127.0.0.1:8080/v1/chat/completions"), true);
   assert.equal(endpointAllowed("http://localhost:8080/v1/models"), true);
+  assert.equal(endpointAllowed("http://frp4.ccszxc.site:14688/v1/chat/completions"), true);
   assert.equal(endpointAllowed("http://frp4.ccszxc.site:14668/v1/chat/completions"), true);
   assert.equal(endpointAllowed("https://example.com/v1/chat/completions"), false);
 });
 
 test("normalizeSettings switches between local and remote endpoints", () => {
-  assert.equal(normalizeSettings({ endpointMode: "remote" }).baseUrl, "http://frp4.ccszxc.site:14668/v1");
+  assert.equal(normalizeSettings({ endpointMode: "remote" }).baseUrl, "http://frp4.ccszxc.site:14688/v1");
   assert.equal(normalizeSettings({ endpointMode: "local" }).baseUrl, "http://127.0.0.1:8080/v1");
-  assert.equal(normalizeSettings({ endpointMode: "custom", baseUrl: "http://frp4.ccszxc.site:14668/v1/" }).baseUrl, "http://frp4.ccszxc.site:14668/v1");
+  assert.equal(normalizeSettings({ endpointMode: "custom", baseUrl: "http://frp4.ccszxc.site:14688/v1/" }).baseUrl, "http://frp4.ccszxc.site:14688/v1");
 });
 
 test("normalizeBaseUrl accepts llama.cpp web UI URLs and converts them to OpenAI API base URLs", () => {
-  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14668/#"), "http://frp4.ccszxc.site:14668/v1");
-  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14668/"), "http://frp4.ccszxc.site:14668/v1");
-  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14668/v1#ignored"), "http://frp4.ccszxc.site:14668/v1");
+  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14688/#"), "http://frp4.ccszxc.site:14688/v1");
+  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14688/"), "http://frp4.ccszxc.site:14688/v1");
+  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14688/v1#ignored"), "http://frp4.ccszxc.site:14688/v1");
 });
 
 test("single translation request uses low latency defaults", () => {
@@ -44,8 +45,8 @@ test("single translation request uses low latency defaults", () => {
 });
 
 test("llama.cpp native completion endpoint is derived from the web UI root", () => {
-  assert.equal(completionEndpoint("http://frp4.ccszxc.site:14668/v1"), "http://frp4.ccszxc.site:14668/completion");
-  assert.equal(completionEndpoint("http://frp4.ccszxc.site:14668/#"), "http://frp4.ccszxc.site:14668/completion");
+  assert.equal(completionEndpoint("http://frp4.ccszxc.site:14688/v1"), "http://frp4.ccszxc.site:14688/completion");
+  assert.equal(completionEndpoint("http://frp4.ccszxc.site:14688/#"), "http://frp4.ccszxc.site:14688/completion");
 });
 
 test("llama.cpp native completion request translates a single item without OpenAI /v1", () => {

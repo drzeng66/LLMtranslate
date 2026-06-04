@@ -1,7 +1,7 @@
 export const DEFAULT_SETTINGS = Object.freeze({
   endpointMode: "local",
   baseUrl: "http://127.0.0.1:8080/v1",
-  remoteBaseUrl: "http://frp4.ccszxc.site:14668/v1",
+  remoteBaseUrl: "http://frp4.ccszxc.site:14688/v1",
   model: "gemma.gguf",
   apiKey: "",
   targetLanguage: "简体中文",
@@ -77,7 +77,7 @@ export function endpointAllowed(url) {
     const parsed = new URL(url);
     if (!/^https?:$/.test(parsed.protocol)) return false;
     if (!ALLOWED_ENDPOINTS.has(parsed.hostname)) return false;
-    if (parsed.hostname === "frp4.ccszxc.site") return parsed.protocol === "http:" && parsed.port === "14668";
+    if (parsed.hostname === "frp4.ccszxc.site") return parsed.protocol === "http:" && ["14688", "14668"].includes(parsed.port);
     return true;
   } catch {
     return false;
@@ -87,7 +87,7 @@ export function endpointAllowed(url) {
 export function assertAllowedEndpoint(url) {
   const normalized = new URL(url).toString();
   if (!endpointAllowed(normalized)) {
-    throw new Error("接口地址未允许：仅允许本机或 http://frp4.ccszxc.site:14668");
+    throw new Error("接口地址未允许：仅允许本机或 http://frp4.ccszxc.site:14688");
   }
   return normalized;
 }

@@ -1,11 +1,11 @@
 # 本地大模型沉浸式翻译 Chrome 扩展
 
-当前版本：0.2.4
+当前版本：0.2.5
 
 ## 新功能
 
 - 支持本机接口：`http://127.0.0.1:8080/v1`
-- 支持你的远程 FRP 映射接口：`http://frp4.ccszxc.site:14668/v1`
+- 支持你的远程 FRP 映射接口：`http://frp4.ccszxc.site:14688/v1`
 - 支持整页段落翻译。
 - 默认支持 `Ctrl + 鼠标悬停段落` 翻译单段，无需每次手动开启；弹窗只保留提示。
 - 支持文档翻译页：PDF、DOCX、TXT，并默认生成左原文全文、右译文全文的中英文对照阅读版。
@@ -15,7 +15,7 @@
 - 修复译文片段以逗号、顿号等结尾时被误判为“不完整译文”的问题。
 - “每段最大字符”上限 3000 已与内部实际分段逻辑一致。
 - “重新翻译失败段”前后会尝试清空模型上下文，减少连续失败。
-- 远程部署时可以直接粘贴 llama.cpp Web 地址，例如 `http://frp4.ccszxc.site:14668/#`，插件会自动规范为 API 地址 `http://frp4.ccszxc.site:14668/v1`。
+- 远程部署时可以直接粘贴 llama.cpp Web 地址，例如 `http://frp4.ccszxc.site:14688/#`，插件会自动规范为 API 地址 `http://frp4.ccszxc.site:14688/v1`。
 - “测试连接”如果遇到 `/v1/models` 被代理返回 502，会自动改用一次极短聊天请求验证 `/v1/chat/completions`，避免 Web 可用但测试误报失败。
 - 如果远程 Web 能用但 `/v1` 系列接口仍返回 502，插件会继续 fallback 到 llama.cpp 原生 `/completion` 接口；测试连接和实际翻译都会走这个兜底。
 - 支持清除页面译文。
@@ -30,9 +30,9 @@
 4. 选择目录：`outputs/local-llm-translator-extension`
 5. 打开扩展“选项”，选择接口模式：
    - 本机：`127.0.0.1`
-   - 远程 FRP：`frp4.ccszxc.site:14668`
+   - 远程 FRP：`frp4.ccszxc.site:14688`
 
-远程电脑上如果你看到 Web 页面 `http://frp4.ccszxc.site:14668/#` 能正常聊天，但插件“测试连接”曾提示 HTTP 502，请更新到 0.2.4 后重新加载扩展。新版会自动把 Web 地址转成 `/v1` API 地址；如果 `/v1` 仍不可用，会再尝试 llama.cpp 原生 `/completion`。
+远程电脑上如果你看到 Web 页面 `http://frp4.ccszxc.site:14688/#` 能正常聊天，但插件“测试连接”曾提示 HTTP 502，请更新到 0.2.5 后重新加载扩展。新版会自动把 Web 地址转成 `/v1` API 地址；如果 `/v1` 仍不可用，会再尝试 llama.cpp 原生 `/completion`。
 
 ## 推荐 llama-server 启动参数
 
@@ -74,6 +74,7 @@ llama-server.exe -m "C:\Users\zengxiaofeng\llama.cpp\models\gemma.gguf" --host 0
 
 - `http://127.0.0.1/*`
 - `http://localhost/*`
-- `http://frp4.ccszxc.site:14668/*`
+- `http://frp4.ccszxc.site:14688/*`
 
 不会调用 DeepL、Google、OpenAI 云端接口。
+
