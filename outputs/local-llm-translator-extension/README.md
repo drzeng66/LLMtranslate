@@ -1,6 +1,6 @@
 # 本地大模型沉浸式翻译 Chrome 扩展
 
-当前版本：0.2.0
+当前版本：0.2.1
 
 ## 新功能
 
@@ -8,7 +8,7 @@
 - 支持你的远程 FRP 映射接口：`http://frp4.ccszxc.site:14668/v1`
 - 支持整页段落翻译。
 - 支持 `Shift + 鼠标悬停段落` 翻译单段。
-- 支持文档翻译页：PDF、DOCX、TXT。
+- 支持文档翻译页：PDF、DOCX、TXT，并默认生成中英文全文对照阅读版。
 - 支持清除页面译文。
 - 支持调用 llama.cpp `/slots/0?action=erase` 清空模型上下文。
 - 支持设置重试次数、超时时间、单段切分长度，降低无效等待。
@@ -51,7 +51,7 @@ llama-server.exe -m "C:\Users\zengxiaofeng\llama.cpp\models\gemma.gguf" --host 0
 - DOCX：支持 Word `.docx`，不支持老式 `.doc`。
 - TXT：直接读取。
 
-文档翻译完成后可以下载 `.translated.txt`。
+文档翻译完成后可以下载 `.bilingual.html` 中英文全文对照文件，适合保存、打印或再次打开阅读。
 
 ## 安全边界
 

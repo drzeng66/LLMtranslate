@@ -9,7 +9,7 @@
   <main>
     <header>
       <h1>本地文档翻译</h1>
-      <p>支持 PDF、DOCX、TXT。文件在浏览器本地解析，逐段调用你的本地/远程大模型。</p>
+      <p>支持 PDF、DOCX、TXT。文件在浏览器本地解析，生成中英文全文对照阅读版。</p>
     </header>
     <section id="drop-zone">
       <input id="file" type="file" accept=".pdf,.docx,.txt,.text,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain">
@@ -20,7 +20,7 @@
       <button id="translate" class="primary" disabled>开始翻译</button>
       <button id="stop" disabled>停止</button>
       <button id="clear-context">清空模型上下文</button>
-      <button id="download" disabled>下载译文 TXT</button>
+      <button id="download" disabled>下载中英对照 HTML</button>
     </section>
     <pre id="status">等待文档…</pre>
     <article id="preview"></article>

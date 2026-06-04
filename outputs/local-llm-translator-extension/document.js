@@ -1,4 +1,5 @@
 import { splitDocumentIntoSegments } from "./lib/translator-core.js";
+import { buildBilingualRows, buildBilingualHtml } from "./lib/document-renderer.js";
 import * as pdfjsLib from "./vendor/pdf.min.mjs";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdf.worker.min.mjs");
@@ -21,6 +22,25 @@ let cancelled = false;
 
 function setStatus(text) { status.textContent = text; }
 
+function renderBilingualPreview() {
+  const rows = buildBilingualRows(segments, translations);
+  preview.innerHTML = "";
+  preview.className = "bilingual-preview";
+  for (const row of rows) {
+    const box = document.createElement("section");
+    box.className = `bilingual-row ${row.status}`;
+    box.dataset.id = row.id;
+    box.innerHTML = `
+      <div class="row-index">${row.index}</div>
+      <article class="source-pane"><h2>原文</h2><p></p></article>
+      <article class="translation-pane"><h2>译文</h2><p></p></article>
+    `;
+    box.querySelector(".source-pane p").textContent = row.source;
+    box.querySelector(".translation-pane p").textContent = row.translation;
+    preview.appendChild(box);
+  }
+}
+
 async function readFile(file) {
   currentFile = file;
   setStatus(`正在解析：${file.name}`);
@@ -36,18 +56,10 @@ function buildSegments() {
   segments = splitDocumentIntoSegments(sourceText, { maxChars, minChars: 180 });
   translations = [];
   cancelled = false;
-  preview.innerHTML = "";
-  for (const segment of segments) {
-    const box = document.createElement("section");
-    box.className = "segment";
-    box.dataset.id = segment.id;
-    box.innerHTML = `<div class="source"></div><div class="translation">待翻译</div>`;
-    box.querySelector(".source").textContent = segment.text;
-    preview.appendChild(box);
-  }
+  renderBilingualPreview();
   translateBtn.disabled = !segments.length;
   downloadBtn.disabled = true;
-  setStatus(segments.length ? `解析完成：${currentFile?.name || "文档"}\n共 ${segments.length} 段。` : "没有提取到可翻译文本。PDF 如果是扫描件，需要 OCR 后再翻译。");
+  setStatus(segments.length ? `解析完成：${currentFile?.name || "文档"}\n已生成全文中英文对照视图，共 ${segments.length} 个对照段落。` : "没有提取到可翻译文本。PDF 如果是扫描件，需要 OCR 后再翻译。");
 }
 
 async function readPdf(file) {
@@ -79,8 +91,10 @@ async function translateDocument() {
   for (let index = 0; index < segments.length; index += 1) {
     if (cancelled) break;
     const segment = segments[index];
-    const node = preview.querySelector(`[data-id="${segment.id}"] .translation`);
-    node.classList.remove("failed");
+    const rowNode = preview.querySelector(`[data-id="${segment.id}"]`);
+    const node = rowNode?.querySelector(".translation-pane p");
+    rowNode?.classList.remove("failed", "done", "pending");
+    rowNode?.classList.add("pending");
     node.textContent = `正在翻译 ${index + 1} / ${segments.length}…`;
     setStatus(`正在翻译：${index + 1} / ${segments.length}\n${currentFile?.name || "文档"}`);
     try {
@@ -88,27 +102,31 @@ async function translateDocument() {
       if (!response?.ok) throw new Error(response?.error || "模型请求失败");
       const translation = response.translations?.[0]?.translation || "";
       translations.push({ ...segment, translation });
+      rowNode?.classList.remove("pending", "failed");
+      rowNode?.classList.add("done");
       node.textContent = translation;
     } catch (error) {
       translations.push({ ...segment, translation: `翻译失败：${error.message}` });
-      node.classList.add("failed");
+      rowNode?.classList.remove("pending", "done");
+      rowNode?.classList.add("failed");
       node.textContent = `翻译失败：${error.message}`;
     }
   }
   stopBtn.disabled = true;
   translateBtn.disabled = false;
   downloadBtn.disabled = !translations.length;
-  setStatus(cancelled ? `已停止：完成 ${translations.length} / ${segments.length} 段` : `翻译完成：${translations.length} / ${segments.length} 段`);
+  setStatus(cancelled ? `已停止：完成 ${translations.length} / ${segments.length} 个对照段落` : `翻译完成：${translations.length} / ${segments.length} 个对照段落`);
 }
 
-function downloadText() {
+function downloadBilingualHtml() {
   const name = (currentFile?.name || "document").replace(/\.[^.]+$/, "");
-  const content = translations.map((item, index) => `# ${index + 1}\n\n原文：\n${item.text}\n\n译文：\n${item.translation}\n`).join("\n---\n\n");
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const rows = buildBilingualRows(segments, translations);
+  const content = buildBilingualHtml({ title: currentFile?.name || "中英文对照文档", rows });
+  const blob = new Blob([content], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${name}.translated.txt`;
+  a.download = `${name}.bilingual.html`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -123,7 +141,7 @@ dropZone.addEventListener("drop", (event) => {
 maxCharsInput.addEventListener("change", () => sourceText && buildSegments());
 translateBtn.addEventListener("click", () => translateDocument().catch((error) => setStatus(`翻译失败：${error.message}`)));
 stopBtn.addEventListener("click", () => { cancelled = true; });
-downloadBtn.addEventListener("click", downloadText);
+downloadBtn.addEventListener("click", downloadBilingualHtml);
 clearContextBtn.addEventListener("click", async () => {
   setStatus("正在清空模型上下文…");
   const response = await chrome.runtime.sendMessage({ type: "CLEAR_CONTEXT" });
