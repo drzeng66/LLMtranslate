@@ -28,10 +28,17 @@ function currentMaxChars() {
   return Number(maxCharsInput.value) || 2200;
 }
 
-async function clearModelContext(reason) {
+async function clearModelContext(reason, { optional = false } = {}) {
   setStatus(`${reason}…`);
   const response = await chrome.runtime.sendMessage({ type: "CLEAR_CONTEXT" });
-  if (!response?.ok) throw new Error(response?.error || "清空模型上下文失败");
+  if (!response?.ok) {
+    const message = response?.error || "清空模型上下文失败";
+    if (optional) {
+      setStatus(`清空上下文不可用，继续翻译：${message}`);
+      return { ok: false, error: message };
+    }
+    throw new Error(message);
+  }
   return response;
 }
 
@@ -131,7 +138,7 @@ async function translateDocument() {
   downloadBtn.disabled = true;
   translations = [];
   renderBilingualPreview();
-  await clearModelContext("开始翻译前清空模型上下文");
+  await clearModelContext("开始翻译前清空模型上下文", { optional: true });
   for (let index = 0; index < segments.length; index += 1) {
     if (cancelled) break;
     const segment = segments[index];
@@ -149,7 +156,7 @@ async function translateDocument() {
   stopBtn.disabled = true;
   translateBtn.disabled = false;
   downloadBtn.disabled = !translations.length;
-  await clearModelContext("文档翻译结束后清空模型上下文").catch((error) => setStatus(`翻译完成，但清空上下文失败：${error.message}`));
+  await clearModelContext("文档翻译结束后清空模型上下文", { optional: true });
   setStatus(cancelled ? `已停止：完成 ${translations.length} / ${segments.length} 个对照段落` : `翻译完成：${translations.length} / ${segments.length} 个对照段落`);
 }
 
