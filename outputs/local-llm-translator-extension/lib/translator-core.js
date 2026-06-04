@@ -104,6 +104,10 @@ export function rootEndpoint(baseUrl) {
   return normalizeBaseUrl(baseUrl).replace(/\/v1$/i, "");
 }
 
+export function completionEndpoint(baseUrl) {
+  return `${rootEndpoint(baseUrl)}/completion`;
+}
+
 export function isContextOverflowError(errorOrMessage) {
   const message = String(errorOrMessage?.message || errorOrMessage || "").toLowerCase();
   return [
@@ -176,6 +180,31 @@ export function buildChatRequest(settings, items, options = {}) {
         content: JSON.stringify(items),
       },
     ],
+  };
+}
+
+export function buildCompletionRequest(settings, item, options = {}) {
+  const normalized = normalizeSettings(settings);
+  const mode = options.mode || "page";
+  const maxTokens = clampInt(
+    options.maxTokens,
+    32,
+    8192,
+    mode === "document" ? normalized.documentMaxTokens : 384,
+  );
+  const targetLanguage =
+    normalized.targetLanguage === "简体中文"
+      ? "简体中文 (Simplified Chinese)"
+      : normalized.targetLanguage;
+  const systemInstruction = mode === "document"
+    ? `Translate the following medical academic document text into ${targetLanguage}. Return only the translated Chinese text. Do not summarize, omit, explain, add markdown, add quotes, or repeat the original text. Preserve medical terminology, abbreviations, numbers, headings, citations, and paragraph meaning accurately.`
+    : `Translate the following text into ${targetLanguage}. Return only the translated Chinese text. Do not explain, add markdown, add quotes, or repeat the original text. Preserve medical terms accurately.`;
+  return {
+    prompt: `${systemInstruction}\n\nTEXT:\n${item.text}\n\nTRANSLATION:`,
+    temperature: 0,
+    stream: false,
+    n_predict: maxTokens,
+    cache_prompt: false,
   };
 }
 
@@ -290,6 +319,14 @@ export function extractTranslations(response, allowedIds) {
   const parsed = JSON.parse(normalizedContent.slice(start, end + 1));
   if (!Array.isArray(parsed)) return normalizeTranslationItems([parsed], allowedIds);
   return normalizeTranslationItems(parsed, allowedIds);
+}
+
+export function extractCompletionTranslation(response, id) {
+  const content = response?.content ?? response?.response ?? response?.text;
+  if (typeof content !== "string") throw new Error("missing llama.cpp completion content");
+  const translation = content.trim();
+  if (!translation) throw new Error("llama.cpp completion content is empty");
+  return [{ id, translation: validateTranslation(id, stripMarkdownFence(translation)) }];
 }
 
 function stripMarkdownFence(content) {

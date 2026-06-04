@@ -45,10 +45,17 @@ test("document translation falls back to smaller chunks before failing a paragra
   assert.match(serviceWorker, /1200,\s*800,\s*500/);
 });
 
-test("connection test falls back to a minimal chat request when models endpoint is unavailable", () => {
+test("connection test falls back to native llama.cpp completion when OpenAI endpoints are unavailable", () => {
   assert.match(serviceWorker, /testMinimalChatCompletion/);
-  assert.match(serviceWorker, /模型列表接口不可用，但聊天接口可用/);
+  assert.match(serviceWorker, /testMinimalNativeCompletion/);
+  assert.match(serviceWorker, /原生 completion 接口可用/);
   assert.match(serviceWorker, /listModels\(\)/);
+});
+
+test("translation requests fall back to native llama.cpp completion after OpenAI API errors", () => {
+  assert.match(serviceWorker, /requestNativeCompletionOnce/);
+  assert.match(serviceWorker, /shouldTryNativeCompletion/);
+  assert.match(serviceWorker, /completionEndpoint/);
 });
 
 test("document page has human-friendly errors and a failed-segment retry action", () => {

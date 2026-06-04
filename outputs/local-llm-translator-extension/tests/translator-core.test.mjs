@@ -6,7 +6,10 @@ import {
   normalizeBaseUrl,
   normalizeSettings,
   buildChatRequest,
+  buildCompletionRequest,
+  completionEndpoint,
   extractTranslations,
+  extractCompletionTranslation,
   splitDocumentIntoSegments,
   makeDocxPlainText,
 } from "../lib/translator-core.js";
@@ -38,6 +41,30 @@ test("single translation request uses low latency defaults", () => {
   assert.equal(req.temperature, 0);
   assert.equal(req.stream, false);
   assert.equal(req.max_tokens, 384);
+});
+
+test("llama.cpp native completion endpoint is derived from the web UI root", () => {
+  assert.equal(completionEndpoint("http://frp4.ccszxc.site:14668/v1"), "http://frp4.ccszxc.site:14668/completion");
+  assert.equal(completionEndpoint("http://frp4.ccszxc.site:14668/#"), "http://frp4.ccszxc.site:14668/completion");
+});
+
+test("llama.cpp native completion request translates a single item without OpenAI /v1", () => {
+  const req = buildCompletionRequest(
+    { ...DEFAULT_SETTINGS, targetLanguage: "简体中文" },
+    { id: "p1", text: "Hello world." },
+    { maxTokens: 128 },
+  );
+  assert.equal(req.stream, false);
+  assert.equal(req.temperature, 0);
+  assert.equal(req.n_predict, 128);
+  assert.match(req.prompt, /Translate/);
+  assert.match(req.prompt, /Hello world\./);
+  assert.doesNotMatch(JSON.stringify(req), /messages/);
+});
+
+test("llama.cpp native completion response is converted to extension translation format", () => {
+  const result = extractCompletionTranslation({ content: "你好，世界。" }, "p1");
+  assert.deepEqual(result, [{ id: "p1", translation: "你好，世界。" }]);
 });
 
 test("document translation request uses medical long-form settings", () => {

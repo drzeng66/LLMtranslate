@@ -3,7 +3,10 @@ import {
   assertAllowedEndpoint,
   authHeaders,
   buildChatRequest,
+  buildCompletionRequest,
   chatEndpoint,
+  completionEndpoint,
+  extractCompletionTranslation,
   extractTranslations,
   modelsEndpoint,
   normalizeSettings,
@@ -151,6 +154,15 @@ async function translateOneChunk(itemsOrItem, knownSettings, options = {}) {
 }
 
 async function requestTranslationOnce(items, settings, options = {}) {
+  try {
+    return await requestOpenAiChatOnce(items, settings, options);
+  } catch (error) {
+    if (!shouldTryNativeCompletion(error) || items.length !== 1) throw error;
+    return await requestNativeCompletionOnce(items[0], settings, options);
+  }
+}
+
+async function requestOpenAiChatOnce(items, settings, options = {}) {
   const endpoint = assertAllowedEndpoint(chatEndpoint(settings.baseUrl));
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), settings.timeoutMs);
@@ -171,6 +183,42 @@ async function requestTranslationOnce(items, settings, options = {}) {
   }
 }
 
+async function requestNativeCompletionOnce(item, settings, options = {}) {
+  const endpoint = assertAllowedEndpoint(completionEndpoint(settings.baseUrl));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), settings.timeoutMs);
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: authHeaders(settings),
+      body: JSON.stringify(buildCompletionRequest(settings, item, options)),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`llama.cpp 原生接口返回 HTTP ${response.status}`);
+    return extractCompletionTranslation(await response.json(), item.id);
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error(`原生 completion 翻译超过 ${Math.round(settings.timeoutMs / 1000)} 秒，已停止`);
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function shouldTryNativeCompletion(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return [
+    "http 404",
+    "http 405",
+    "http 500",
+    "http 501",
+    "http 502",
+    "http 503",
+    "http 504",
+    "failed to fetch",
+    "networkerror",
+  ].some((pattern) => message.includes(pattern));
+}
+
 async function listModels() {
   const settings = await getSettings();
   const endpoint = assertAllowedEndpoint(modelsEndpoint(settings.baseUrl));
@@ -184,9 +232,18 @@ async function testConnection() {
   try {
     return await listModels();
   } catch (modelsError) {
-    await testMinimalChatCompletion();
     const settings = await getSettings();
-    return [`模型列表接口不可用，但聊天接口可用：${settings.model}`, `原始检测错误：${modelsError.message}`];
+    try {
+      await testMinimalChatCompletion();
+      return [`模型列表接口不可用，但聊天接口可用：${settings.model}`, `原始检测错误：${modelsError.message}`];
+    } catch (chatError) {
+      await testMinimalNativeCompletion();
+      return [
+        `OpenAI /v1 接口不可用，但 llama.cpp 原生 completion 接口可用：${settings.model}`,
+        `模型列表错误：${modelsError.message}`,
+        `聊天接口错误：${chatError.message}`,
+      ];
+    }
   }
 }
 
@@ -201,6 +258,19 @@ async function testMinimalChatCompletion() {
   if (!response.ok) throw new Error(`模型接口返回 HTTP ${response.status}`);
   const payload = await response.json();
   extractTranslations(payload, new Set(["connection-test"]));
+  return true;
+}
+
+async function testMinimalNativeCompletion() {
+  const settings = await getSettings();
+  const endpoint = assertAllowedEndpoint(completionEndpoint(settings.baseUrl));
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: authHeaders(settings),
+    body: JSON.stringify(buildCompletionRequest(settings, { id: "connection-test", text: "Say OK." }, { maxTokens: 32 })),
+  });
+  if (!response.ok) throw new Error(`llama.cpp 原生接口返回 HTTP ${response.status}`);
+  extractCompletionTranslation(await response.json(), "connection-test");
   return true;
 }
 
