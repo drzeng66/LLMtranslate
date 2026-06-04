@@ -87,6 +87,20 @@ export function rootEndpoint(baseUrl) {
   return normalizeBaseUrl(baseUrl).replace(/\/v1$/i, "");
 }
 
+export function isContextOverflowError(errorOrMessage) {
+  const message = String(errorOrMessage?.message || errorOrMessage || "").toLowerCase();
+  return [
+    "context shift",
+    "context window",
+    "context is full",
+    "slot context",
+    "prompt exceeds",
+    "exceed context",
+    "too many tokens",
+    "maximum context",
+  ].some((pattern) => message.includes(pattern));
+}
+
 export function authHeaders(settings) {
   const headers = { "Content-Type": "application/json" };
   const apiKey = String(settings.apiKey || "").trim();

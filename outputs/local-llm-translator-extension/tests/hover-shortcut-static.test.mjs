@@ -19,3 +19,10 @@ test("hover translation also works when Ctrl is pressed after the pointer is alr
   assert.match(contentScript, /addEventListener\("keydown"/);
   assert.match(contentScript, /event\.key === "Control"/);
 });
+
+test("content script can replace old listeners after extension reload", () => {
+  assert.match(contentScript, /__localLlmTranslatorAbortController/);
+  assert.match(contentScript, /\.abort\(\)/);
+  assert.match(contentScript, /signal:\s*scriptAbortController\.signal/);
+  assert.doesNotMatch(contentScript, /__localLlmTranslatorInjected\) return/);
+});

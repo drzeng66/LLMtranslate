@@ -47,6 +47,14 @@ test("document translation request uses medical long-form settings", () => {
   assert.doesNotMatch(req.messages[0].content, /Return JSON array/i);
 });
 
+test("context overflow errors are recognized for automatic clear and retry", async () => {
+  const { isContextOverflowError } = await import("../lib/translator-core.js");
+  assert.equal(isContextOverflowError("context shift is disabled"), true);
+  assert.equal(isContextOverflowError("prompt exceeds context window"), true);
+  assert.equal(isContextOverflowError("slot context is full"), true);
+  assert.equal(isContextOverflowError("ordinary network error"), false);
+});
+
 test("document segmentation avoids oversized chunks and preserves ids", () => {
   const text = Array.from({ length: 80 }, (_, i) => `Sentence ${i + 1} has enough English text for translation.`).join(" ");
   const chunks = splitDocumentIntoSegments(text, { maxChars: 500, minChars: 120 });

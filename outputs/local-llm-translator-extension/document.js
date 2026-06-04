@@ -1,4 +1,4 @@
-import { splitDocumentIntoSegments } from "./lib/translator-core.js";
+import { isContextOverflowError, splitDocumentIntoSegments } from "./lib/translator-core.js";
 import { buildBilingualColumns, buildBilingualHtml } from "./lib/document-renderer.js";
 import * as pdfjsLib from "./vendor/pdf.min.mjs";
 
@@ -26,6 +26,13 @@ function setStatus(text) { status.textContent = text; }
 
 function currentMaxChars() {
   return Number(maxCharsInput.value) || 2200;
+}
+
+async function clearModelContext(reason) {
+  setStatus(`${reason}…`);
+  const response = await chrome.runtime.sendMessage({ type: "CLEAR_CONTEXT" });
+  if (!response?.ok) throw new Error(response?.error || "清空模型上下文失败");
+  return response;
 }
 
 function renderBilingualPreview() {
@@ -124,17 +131,13 @@ async function translateDocument() {
   downloadBtn.disabled = true;
   translations = [];
   renderBilingualPreview();
+  await clearModelContext("开始翻译前清空模型上下文");
   for (let index = 0; index < segments.length; index += 1) {
     if (cancelled) break;
     const segment = segments[index];
     setStatus(`正在翻译：${index + 1} / ${segments.length}\n${currentFile?.name || "文档"}`);
     try {
-      const response = await chrome.runtime.sendMessage({
-        type: "TRANSLATE_BATCH",
-        items: [segment],
-        options: { mode: "document", maxChunkChars: maxChars, maxTokens: 4096 },
-      });
-      if (!response?.ok) throw new Error(response?.error || "模型请求失败");
+      const response = await translateDocumentSegment(segment, maxChars);
       const translation = response.translations?.[0]?.translation || "";
       translations.push({ ...segment, translation });
       updateTranslationPreview();
@@ -146,7 +149,24 @@ async function translateDocument() {
   stopBtn.disabled = true;
   translateBtn.disabled = false;
   downloadBtn.disabled = !translations.length;
+  await clearModelContext("文档翻译结束后清空模型上下文").catch((error) => setStatus(`翻译完成，但清空上下文失败：${error.message}`));
   setStatus(cancelled ? `已停止：完成 ${translations.length} / ${segments.length} 个对照段落` : `翻译完成：${translations.length} / ${segments.length} 个对照段落`);
+}
+
+async function translateDocumentSegment(segment, maxChars) {
+  const request = {
+    type: "TRANSLATE_BATCH",
+    items: [segment],
+    options: { mode: "document", maxChunkChars: maxChars, maxTokens: 4096 },
+  };
+  let response = await chrome.runtime.sendMessage(request);
+  if (response?.ok) return response;
+  const errorMessage = response?.error || "模型请求失败";
+  if (!isContextOverflowError(errorMessage)) throw new Error(errorMessage);
+  await clearModelContext("检测到上下文超限，正在清空后重试当前段");
+  response = await chrome.runtime.sendMessage(request);
+  if (!response?.ok) throw new Error(response?.error || "模型请求失败");
+  return response;
 }
 
 function downloadBilingualHtml() {
@@ -174,7 +194,10 @@ translateBtn.addEventListener("click", () => translateDocument().catch((error) =
 stopBtn.addEventListener("click", () => { cancelled = true; });
 downloadBtn.addEventListener("click", downloadBilingualHtml);
 clearContextBtn.addEventListener("click", async () => {
-  setStatus("正在清空模型上下文…");
-  const response = await chrome.runtime.sendMessage({ type: "CLEAR_CONTEXT" });
-  setStatus(response?.ok ? "模型上下文已清空" : `清空失败：${response?.error || "未知错误"}`);
+  try {
+    await clearModelContext("正在清空模型上下文");
+    setStatus("模型上下文已清空");
+  } catch (error) {
+    setStatus(`清空失败：${error.message}`);
+  }
 });

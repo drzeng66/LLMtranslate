@@ -1,5 +1,8 @@
 (() => {
-  if (globalThis.__localLlmTranslatorInjected) return;
+  const scriptAbortController = new AbortController();
+  const previousAbortController = globalThis.__localLlmTranslatorAbortController;
+  if (previousAbortController) previousAbortController.abort();
+  globalThis.__localLlmTranslatorAbortController = scriptAbortController;
   globalThis.__localLlmTranslatorInjected = true;
 
   const state = {
@@ -193,13 +196,13 @@
     translateHoveredNode(event).catch((error) => showError(error.message));
   }
 
-  document.addEventListener("mouseover", handleHoverEvent, true);
-  document.addEventListener("mousemove", handleHoverEvent, true);
+  document.addEventListener("mouseover", handleHoverEvent, { capture: true, signal: scriptAbortController.signal });
+  document.addEventListener("mousemove", handleHoverEvent, { capture: true, signal: scriptAbortController.signal });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Control" && state.lastHoverTarget) {
       translateHoveredNode({ target: state.lastHoverTarget, ctrlKey: true }).catch((error) => showError(error.message));
     }
-  }, true);
+  }, { capture: true, signal: scriptAbortController.signal });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "TOGGLE_TRANSLATION") {

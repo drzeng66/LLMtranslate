@@ -11,6 +11,11 @@ test("document translator sends optimized document options to the background wor
   assert.match(documentJs, /maxTokens:\s*4096/);
 });
 
+test("document translator clears model context before and after a document", () => {
+  assert.match(documentJs, /clearModelContext\("开始翻译前清空模型上下文"\)/);
+  assert.match(documentJs, /clearModelContext\("文档翻译结束后清空模型上下文"\)/);
+});
+
 test("document translator defaults to larger literature chunks", () => {
   assert.match(documentHtml, /id="max-chars"[^>]+max="3000"[^>]+value="2200"/);
 });
