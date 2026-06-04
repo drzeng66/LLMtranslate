@@ -60,6 +60,7 @@ class RouterDecisionTests(unittest.TestCase):
 
     def test_fallback_error_detection(self):
         self.assertTrue(should_fallback_to_strong(400, "context length exceeded"))
+        self.assertTrue(should_fallback_to_strong(599, "connection refused"))
         self.assertTrue(should_fallback_to_strong(500, "server error"))
         self.assertFalse(should_fallback_to_strong(401, "bad key"))
         self.assertFalse(should_fallback_to_strong(404, "missing"))

@@ -123,7 +123,7 @@ def normalize_chat_payload(payload: Dict[str, Any], backend_model: str) -> Dict[
 
 def should_fallback_to_strong(status_code: int | None, body_text: str) -> bool:
     text = (body_text or "").lower()
-    if status_code in {408, 409, 429, 500, 502, 503, 504}:
+    if status_code in {408, 409, 429, 500, 502, 503, 504, 599}:
         return True
     if status_code == 400 and any(k in text for k in ["context", "too many tokens", "maximum context", "exceeded"]):
         return True
