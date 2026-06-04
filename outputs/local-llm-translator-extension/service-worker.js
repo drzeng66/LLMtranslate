@@ -60,7 +60,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message.type === "TEST_CONNECTION") {
-    listModels()
+    testConnection()
       .then((models) => sendResponse({ ok: true, models }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -178,6 +178,30 @@ async function listModels() {
   if (!response.ok) throw new Error(`模型接口返回 HTTP ${response.status}`);
   const payload = await response.json();
   return (payload.data || payload.models || []).map((model) => model.id || model.name || model.model).filter(Boolean);
+}
+
+async function testConnection() {
+  try {
+    return await listModels();
+  } catch (modelsError) {
+    await testMinimalChatCompletion();
+    const settings = await getSettings();
+    return [`模型列表接口不可用，但聊天接口可用：${settings.model}`, `原始检测错误：${modelsError.message}`];
+  }
+}
+
+async function testMinimalChatCompletion() {
+  const settings = await getSettings();
+  const endpoint = assertAllowedEndpoint(chatEndpoint(settings.baseUrl));
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: authHeaders(settings),
+    body: JSON.stringify(buildChatRequest(settings, [{ id: "connection-test", text: "Say OK." }], { maxTokens: 32 })),
+  });
+  if (!response.ok) throw new Error(`模型接口返回 HTTP ${response.status}`);
+  const payload = await response.json();
+  extractTranslations(payload, new Set(["connection-test"]));
+  return true;
 }
 
 async function clearServerContext() {

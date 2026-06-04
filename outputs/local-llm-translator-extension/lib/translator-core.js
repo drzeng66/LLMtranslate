@@ -22,7 +22,24 @@ const ALLOWED_ENDPOINTS = new Set([
 ]);
 
 export function normalizeBaseUrl(baseUrl) {
-  return String(baseUrl || DEFAULT_SETTINGS.baseUrl).trim().replace(/\/+$/, "");
+  const raw = String(baseUrl || DEFAULT_SETTINGS.baseUrl).trim();
+  try {
+    const parsed = new URL(raw);
+    parsed.hash = "";
+    parsed.search = "";
+    parsed.pathname = normalizeApiPath(parsed.pathname);
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return raw.replace(/\/+$/, "");
+  }
+}
+
+function normalizeApiPath(pathname) {
+  const path = String(pathname || "/").replace(/\/+$/, "");
+  if (!path || path === "/") return "/v1";
+  if (/\/v1$/i.test(path)) return path.replace(/\/v1$/i, "/v1");
+  if (/\/#$/.test(path)) return "/v1";
+  return path;
 }
 
 export function normalizeSettings(settings = {}) {

@@ -45,6 +45,12 @@ test("document translation falls back to smaller chunks before failing a paragra
   assert.match(serviceWorker, /1200,\s*800,\s*500/);
 });
 
+test("connection test falls back to a minimal chat request when models endpoint is unavailable", () => {
+  assert.match(serviceWorker, /testMinimalChatCompletion/);
+  assert.match(serviceWorker, /模型列表接口不可用，但聊天接口可用/);
+  assert.match(serviceWorker, /listModels\(\)/);
+});
+
 test("document page has human-friendly errors and a failed-segment retry action", () => {
   assert.match(documentHtml, /id="retry-failed"/);
   assert.match(documentJs, /humanizeError/);

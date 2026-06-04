@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_SETTINGS,
   endpointAllowed,
+  normalizeBaseUrl,
   normalizeSettings,
   buildChatRequest,
   extractTranslations,
@@ -23,6 +24,12 @@ test("normalizeSettings switches between local and remote endpoints", () => {
   assert.equal(normalizeSettings({ endpointMode: "remote" }).baseUrl, "http://frp4.ccszxc.site:14668/v1");
   assert.equal(normalizeSettings({ endpointMode: "local" }).baseUrl, "http://127.0.0.1:8080/v1");
   assert.equal(normalizeSettings({ endpointMode: "custom", baseUrl: "http://frp4.ccszxc.site:14668/v1/" }).baseUrl, "http://frp4.ccszxc.site:14668/v1");
+});
+
+test("normalizeBaseUrl accepts llama.cpp web UI URLs and converts them to OpenAI API base URLs", () => {
+  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14668/#"), "http://frp4.ccszxc.site:14668/v1");
+  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14668/"), "http://frp4.ccszxc.site:14668/v1");
+  assert.equal(normalizeBaseUrl("http://frp4.ccszxc.site:14668/v1#ignored"), "http://frp4.ccszxc.site:14668/v1");
 });
 
 test("single translation request uses low latency defaults", () => {
