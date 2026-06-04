@@ -1,14 +1,19 @@
 import unittest
 import json
+from types import SimpleNamespace
 
 from router import (
     RouteDecision,
     chat_completion_to_sse,
+    codex_response_to_chat_completion_bytes,
+    default_strong_providers,
+    build_responses_payload,
     choose_route,
     estimate_tokens,
     header_safe,
     normalize_chat_payload,
     should_fallback_to_strong,
+    should_try_next_backend,
 )
 
 
@@ -64,6 +69,67 @@ class RouterDecisionTests(unittest.TestCase):
         self.assertTrue(should_fallback_to_strong(500, "server error"))
         self.assertFalse(should_fallback_to_strong(401, "bad key"))
         self.assertFalse(should_fallback_to_strong(404, "missing"))
+
+    def test_provider_chain_tries_next_on_any_backend_error(self):
+        self.assertTrue(should_try_next_backend(400, "model unsupported"))
+        self.assertTrue(should_try_next_backend(401, "auth expired"))
+        self.assertTrue(should_try_next_backend(599, "connection refused"))
+        self.assertFalse(should_try_next_backend(200, "{}"))
+
+    def test_strong_provider_chain_prefers_openai_codex(self):
+        self.assertEqual(default_strong_providers(), ["openai-codex", "Api.apikey.fun"])
+
+    def test_build_responses_payload_moves_system_to_instructions(self):
+        payload = {
+            "messages": [
+                {"role": "system", "content": "System rule."},
+                {"role": "user", "content": "请深度推理"},
+            ],
+            "tools": [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}],
+            "max_tokens": 12,
+            "temperature": 0,
+        }
+        converted = build_responses_payload(payload, "gpt-5.5")
+        self.assertEqual(converted["model"], "gpt-5.5")
+        self.assertIn("System rule.", converted["instructions"])
+        self.assertEqual(converted["input"][0]["role"], "user")
+        self.assertEqual(converted["max_output_tokens"], 12)
+        self.assertEqual(converted["tools"][0]["name"], "lookup")
+
+    def test_codex_response_to_chat_completion_bytes_preserves_text(self):
+        response = SimpleNamespace(
+            id="resp-test",
+            model="gpt-5.5",
+            output_text="2",
+            output=[
+                SimpleNamespace(
+                    type="message",
+                    role="assistant",
+                    status="completed",
+                    content=[SimpleNamespace(type="output_text", text="2")],
+                )
+            ],
+            usage=None,
+        )
+        raw = codex_response_to_chat_completion_bytes(response, "gpt-5.5")
+        data = json.loads(raw.decode("utf-8"))
+        self.assertEqual(data["choices"][0]["message"]["content"], "2")
+        self.assertEqual(data["choices"][0]["finish_reason"], "stop")
+
+    def test_codex_chat_like_response_to_chat_completion_bytes_preserves_text(self):
+        response = SimpleNamespace(
+            model="gpt-5.5",
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(role="assistant", content="2", tool_calls=None),
+                )
+            ],
+        )
+        raw = codex_response_to_chat_completion_bytes(response, "gpt-5.5")
+        data = json.loads(raw.decode("utf-8"))
+        self.assertEqual(data["choices"][0]["message"]["content"], "2")
+        self.assertEqual(data["choices"][0]["finish_reason"], "stop")
 
     def test_token_estimate(self):
         self.assertGreaterEqual(estimate_tokens("a" * 4000), 900)

@@ -23,7 +23,8 @@ ROUTER_MODEL = "hermes-smart-router"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8788
 DEFAULT_LOCAL_PROVIDER = "llamaccp"
-DEFAULT_STRONG_PROVIDER = "Api.apikey.fun"
+DEFAULT_STRONG_PROVIDER = "openai-codex"
+DEFAULT_STRONG_FALLBACK_PROVIDER = "Api.apikey.fun"
 DEFAULT_HERMES_AGENT_DIR = r"C:\Users\zengxiaofeng\AppData\Local\hermes\hermes-agent"
 
 STRONG_KEYWORDS = [
@@ -52,6 +53,7 @@ class Backend:
     model: str
     base_url: str
     api_key: str
+    api_mode: str = "chat_completions"
 
 
 def estimate_tokens(text: str) -> int:
@@ -121,6 +123,21 @@ def normalize_chat_payload(payload: Dict[str, Any], backend_model: str) -> Dict[
     return rewritten
 
 
+def default_strong_providers() -> list[str]:
+    configured = os.getenv("HERMES_ROUTER_STRONG_PROVIDERS", "").strip()
+    if configured:
+        providers = [p.strip() for p in configured.split(",") if p.strip()]
+        if providers:
+            return providers
+    primary = os.getenv("HERMES_ROUTER_STRONG_PROVIDER", DEFAULT_STRONG_PROVIDER).strip() or DEFAULT_STRONG_PROVIDER
+    fallback = os.getenv("HERMES_ROUTER_STRONG_FALLBACK_PROVIDER", DEFAULT_STRONG_FALLBACK_PROVIDER).strip()
+    providers: list[str] = []
+    for provider in [primary, fallback]:
+        if provider and provider.lower() not in {p.lower() for p in providers}:
+            providers.append(provider)
+    return providers
+
+
 def should_fallback_to_strong(status_code: int | None, body_text: str) -> bool:
     text = (body_text or "").lower()
     if status_code in {408, 409, 429, 500, 502, 503, 504, 599}:
@@ -130,13 +147,22 @@ def should_fallback_to_strong(status_code: int | None, body_text: str) -> bool:
     return False
 
 
+def should_try_next_backend(status_code: int | None, body_text: str) -> bool:
+    if status_code is None:
+        return True
+    if status_code >= 400:
+        return True
+    text = (body_text or "").lower()
+    return "error" in text and "choices" not in text
+
+
 def _ensure_hermes_import_path() -> None:
     agent_dir = os.getenv("HERMES_AGENT_DIR", DEFAULT_HERMES_AGENT_DIR)
     if agent_dir and agent_dir not in sys.path:
         sys.path.insert(0, agent_dir)
 
 
-def resolve_backend(kind: str) -> Backend:
+def resolve_backend(kind: str, requested_override: str | None = None) -> Backend:
     _ensure_hermes_import_path()
     from hermes_cli.runtime_provider import resolve_runtime_provider  # type: ignore
 
@@ -144,15 +170,22 @@ def resolve_backend(kind: str) -> Backend:
         requested = os.getenv("HERMES_ROUTER_LOCAL_PROVIDER", DEFAULT_LOCAL_PROVIDER)
         model_override = os.getenv("HERMES_ROUTER_LOCAL_MODEL", "").strip()
     else:
-        requested = os.getenv("HERMES_ROUTER_STRONG_PROVIDER", DEFAULT_STRONG_PROVIDER)
+        requested = requested_override or os.getenv("HERMES_ROUTER_STRONG_PROVIDER", DEFAULT_STRONG_PROVIDER)
         model_override = os.getenv("HERMES_ROUTER_STRONG_MODEL", "").strip()
     runtime = resolve_runtime_provider(requested=requested)
     model = model_override or str(runtime.get("model") or "").strip()
     base_url = str(runtime.get("base_url") or "").strip().rstrip("/")
     api_key = runtime.get("api_key") or ""
+    api_mode = str(runtime.get("api_mode") or "chat_completions").strip() or "chat_completions"
     if not model or not base_url:
         raise RuntimeError(f"{kind} backend is incomplete: provider={requested!r}, model={model!r}, base_url={base_url!r}")
-    return Backend(provider=requested, model=model, base_url=base_url, api_key=api_key)
+    return Backend(provider=requested, model=model, base_url=base_url, api_key=api_key, api_mode=api_mode)
+
+
+def resolve_backend_candidates(kind: str) -> list[Backend]:
+    if kind == "local":
+        return [resolve_backend("local")]
+    return [resolve_backend("strong", provider) for provider in default_strong_providers()]
 
 
 def auth_headers(api_key: str) -> Dict[str, str]:
@@ -163,6 +196,8 @@ def auth_headers(api_key: str) -> Dict[str, str]:
 
 
 def post_chat_completion(backend: Backend, payload: Dict[str, Any], timeout: float = 600.0) -> Tuple[int, bytes, Dict[str, str]]:
+    if backend.api_mode == "codex_responses":
+        return post_codex_response(backend, payload, timeout=timeout)
     url = backend.base_url.rstrip("/") + "/chat/completions"
     body = json.dumps(normalize_chat_payload(payload, backend.model), ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST", headers=auth_headers(backend.api_key))
@@ -173,6 +208,133 @@ def post_chat_completion(backend: Backend, payload: Dict[str, Any], timeout: flo
         return exc.code, exc.read(), dict(exc.headers)
     except Exception as exc:
         return 599, json.dumps({"error": {"message": str(exc), "type": type(exc).__name__}}, ensure_ascii=False).encode("utf-8"), {}
+
+
+def build_responses_payload(payload: Dict[str, Any], backend_model: str) -> Dict[str, Any]:
+    _ensure_hermes_import_path()
+    from agent.codex_responses_adapter import _chat_messages_to_responses_input, _responses_tools  # type: ignore
+
+    messages = payload.get("messages") or []
+    system_parts = []
+    if isinstance(messages, list):
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get("role") == "system":
+                content = msg.get("content")
+                if isinstance(content, str):
+                    system_parts.append(content)
+                elif content is not None:
+                    system_parts.append(str(content))
+    converted: Dict[str, Any] = {
+        "model": backend_model,
+        "instructions": "\n\n".join(system_parts).strip() or "You are a concise assistant.",
+        "input": _chat_messages_to_responses_input(messages if isinstance(messages, list) else [], current_issuer_kind="codex_backend"),
+        "store": False,
+    }
+    tools = _responses_tools(payload.get("tools") if isinstance(payload.get("tools"), list) else None)
+    if tools:
+        converted["tools"] = tools
+    max_tokens = payload.get("max_completion_tokens") or payload.get("max_tokens")
+    if isinstance(max_tokens, (int, float)) and max_tokens > 0:
+        converted["max_output_tokens"] = int(max_tokens)
+    temperature = payload.get("temperature")
+    if isinstance(temperature, (int, float)):
+        converted["temperature"] = float(temperature)
+    return converted
+
+
+def _namespace_tool_call_to_dict(tool_call: Any) -> Dict[str, Any]:
+    function = getattr(tool_call, "function", None)
+    return {
+        "id": getattr(tool_call, "id", None) or getattr(tool_call, "call_id", None) or f"call_{int(time.time())}",
+        "type": "function",
+        "function": {
+            "name": getattr(function, "name", "") if function is not None else "",
+            "arguments": getattr(function, "arguments", "{}") if function is not None else "{}",
+        },
+    }
+
+
+def chat_like_response_to_chat_completion_bytes(response: Any, backend_model: str) -> bytes:
+    choices = getattr(response, "choices", None) or []
+    first = choices[0] if choices else None
+    assistant_message = getattr(first, "message", None) if first is not None else None
+    content = getattr(assistant_message, "content", "") if assistant_message is not None else ""
+    tool_calls_raw = getattr(assistant_message, "tool_calls", None) if assistant_message is not None else None
+    message: Dict[str, Any] = {"role": "assistant", "content": content or ""}
+    if tool_calls_raw:
+        message["tool_calls"] = [_namespace_tool_call_to_dict(tc) for tc in tool_calls_raw]
+    finish_reason = getattr(first, "finish_reason", None) if first is not None else None
+    if not finish_reason:
+        finish_reason = "tool_calls" if tool_calls_raw else "stop"
+    payload = {
+        "id": getattr(response, "id", None) or f"chatcmpl-codex-router-{int(time.time())}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": getattr(response, "model", None) or backend_model,
+        "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
+    }
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def codex_response_to_chat_completion_bytes(response: Any, backend_model: str) -> bytes:
+    if getattr(response, "choices", None):
+        return chat_like_response_to_chat_completion_bytes(response, backend_model)
+    _ensure_hermes_import_path()
+    from agent.codex_responses_adapter import _normalize_codex_response  # type: ignore
+
+    assistant_message, finish_reason = _normalize_codex_response(response, issuer_kind="codex_backend")
+    content = getattr(assistant_message, "content", "") or ""
+    tool_calls_raw = getattr(assistant_message, "tool_calls", None)
+    message: Dict[str, Any] = {"role": "assistant", "content": content}
+    if tool_calls_raw:
+        message["tool_calls"] = [_namespace_tool_call_to_dict(tc) for tc in tool_calls_raw]
+        finish_reason = "tool_calls"
+    payload = {
+        "id": getattr(response, "id", None) or f"chatcmpl-codex-router-{int(time.time())}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": getattr(response, "model", None) or backend_model,
+        "choices": [{"index": 0, "message": message, "finish_reason": finish_reason or "stop"}],
+    }
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def post_codex_response(backend: Backend, payload: Dict[str, Any], timeout: float = 600.0) -> Tuple[int, bytes, Dict[str, str]]:
+    try:
+        _ensure_hermes_import_path()
+        from agent.auxiliary_client import resolve_provider_client  # type: ignore
+
+        client, resolved_model = resolve_provider_client(backend.provider, backend.model, raw_codex=False)
+        if client is None:
+            raise RuntimeError(f"{backend.provider} client is unavailable")
+        request_payload = normalize_chat_payload(payload, resolved_model or backend.model)
+        request_payload["timeout"] = timeout
+        response = client.chat.completions.create(**request_payload)
+        return 200, codex_response_to_chat_completion_bytes(response, resolved_model or backend.model), {"Content-Type": "application/json"}
+    except Exception as exc:
+        status = getattr(exc, "status_code", None) or getattr(exc, "code", None) or 599
+        try:
+            status = int(status)
+        except Exception:
+            status = 599
+        return status, json.dumps({"error": {"message": str(exc), "type": type(exc).__name__}}, ensure_ascii=False).encode("utf-8"), {}
+
+
+def post_first_success(backends: list[Backend], payload: Dict[str, Any]) -> Tuple[int, bytes, Dict[str, str], Backend, str]:
+    last_status = 599
+    last_body = b""
+    last_headers: Dict[str, str] = {}
+    last_backend: Backend | None = None
+    attempted: list[str] = []
+    for backend in backends:
+        attempted.append(backend.provider)
+        status, body, headers = post_chat_completion(backend, payload)
+        last_status, last_body, last_headers, last_backend = status, body, headers, backend
+        if not should_try_next_backend(status, body.decode("utf-8", "replace")):
+            return status, body, headers, backend, ",".join(attempted)
+    if last_backend is None:
+        raise RuntimeError("no backend candidates available")
+    return last_status, last_body, last_headers, last_backend, ",".join(attempted)
 
 
 def models_payload() -> Dict[str, Any]:
@@ -340,17 +502,19 @@ class RouterHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or "0")
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
             decision = choose_route(payload)
-            backend = resolve_backend(decision.route)
-            debug_log("request", route=decision.route, reason=decision.reason, backend_provider=backend.provider, backend_model=backend.model, **summarize_payload(payload))
-            status, body, headers = post_chat_completion(backend, payload)
+            backend_candidates = resolve_backend_candidates(decision.route)
+            backend = backend_candidates[0]
+            debug_log("request", route=decision.route, reason=decision.reason, backend_provider=backend.provider, backend_model=backend.model, backend_api_mode=backend.api_mode, candidates=",".join(b.provider for b in backend_candidates), **summarize_payload(payload))
+            status, body, headers, used_backend, attempted = post_first_success(backend_candidates, payload)
             route_used = decision.route
             reason = decision.reason
             if decision.route == "local" and should_fallback_to_strong(status, body.decode("utf-8", "replace")):
-                strong = resolve_backend("strong")
-                status, body, headers = post_chat_completion(strong, payload)
+                strong_candidates = resolve_backend_candidates("strong")
+                status, body, headers, used_backend, strong_attempted = post_first_success(strong_candidates, payload)
                 route_used = "strong"
                 reason = f"fallback-after-local:{decision.reason}"
-            debug_log("response", route=route_used, reason=reason, **summarize_response(status, body))
+                attempted = attempted + "->" + strong_attempted
+            debug_log("response", route=route_used, reason=reason, backend_provider=used_backend.provider, backend_model=used_backend.model, backend_api_mode=used_backend.api_mode, attempted=attempted, **summarize_response(status, body))
             if payload.get("stream") and 200 <= status < 300:
                 body = chat_completion_to_sse(body)
                 self.send_response(status)
@@ -358,6 +522,7 @@ class RouterHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("X-Hermes-Smart-Route", route_used)
                 self.send_header("X-Hermes-Smart-Reason", header_safe(reason)[:180])
+                self.send_header("X-Hermes-Smart-Provider", header_safe(used_backend.provider)[:120])
                 self.end_headers()
                 self.wfile.write(body)
                 return
@@ -366,6 +531,7 @@ class RouterHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("X-Hermes-Smart-Route", route_used)
             self.send_header("X-Hermes-Smart-Reason", header_safe(reason)[:180])
+            self.send_header("X-Hermes-Smart-Provider", header_safe(used_backend.provider)[:120])
             self.end_headers()
             self.wfile.write(body)
         except Exception as exc:

@@ -11,6 +11,6 @@ $env:HERMES_ROUTER_PORT = [string]$Port
 $env:HERMES_ROUTER_LOCAL_PROVIDER = "llamaccp"
 # 当前 llama.cpp /v1/models 显示模型 ID 是 gemma.gguf；覆盖 Hermes 里旧的 glm.gguf 名称。
 $env:HERMES_ROUTER_LOCAL_MODEL = "gemma.gguf"
-$env:HERMES_ROUTER_STRONG_PROVIDER = "Api.apikey.fun"
+$env:HERMES_ROUTER_STRONG_PROVIDERS = "openai-codex,Api.apikey.fun"
 $env:HERMES_ROUTER_STRONG_MODEL = "gpt-5.5"
 & $HermesPython (Join-Path $RouterRoot "router.py")
