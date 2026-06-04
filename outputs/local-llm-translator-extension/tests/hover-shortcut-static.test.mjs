@@ -6,10 +6,11 @@ const contentScript = readFileSync(new URL("../content-script.js", import.meta.u
 const popupHtml = readFileSync(new URL("../popup.html", import.meta.url), "utf8");
 
 test("hover translation is triggered by Ctrl instead of Shift", () => {
+  assert.match(contentScript, /hoverEnabled:\s*true/);
   assert.match(contentScript, /event\.ctrlKey/);
   assert.doesNotMatch(contentScript, /event\.shiftKey/);
   assert.match(contentScript, /按住 Ctrl/);
-  assert.match(popupHtml, /Ctrl \+ 鼠标/);
+  assert.match(popupHtml, /Ctrl \+ 鼠标悬停默认开启/);
   assert.doesNotMatch(popupHtml, /Shift \+ 鼠标/);
 });
 

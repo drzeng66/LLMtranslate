@@ -12,7 +12,7 @@
     completed: 0,
     failed: [],
     cancelled: false,
-    hoverEnabled: false,
+    hoverEnabled: true,
     hoverBusy: false,
     lastHoverTarget: null,
   };
@@ -211,7 +211,7 @@
     }
     if (message.type === "ENABLE_HOVER_TRANSLATION") {
       state.hoverEnabled = true;
-      updateProgress("已开启：按住 Ctrl 并把鼠标移到段落上即可翻译该段");
+      updateProgress("Ctrl 悬停翻译已启用：按住 Ctrl 并把鼠标移到段落上即可翻译该段");
       sendResponse({ ok: true });
       return false;
     }
