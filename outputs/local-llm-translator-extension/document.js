@@ -9,8 +9,10 @@ const dropZone = document.getElementById("drop-zone");
 const translateBtn = document.getElementById("translate");
 const stopBtn = document.getElementById("stop");
 const downloadBtn = document.getElementById("download");
+const retryFailedBtn = document.getElementById("retry-failed");
 const clearContextBtn = document.getElementById("clear-context");
 const maxCharsInput = document.getElementById("max-chars");
+const docSummary = document.getElementById("doc-summary");
 const status = document.getElementById("status");
 const preview = document.getElementById("preview");
 
@@ -28,18 +30,74 @@ function currentMaxChars() {
   return Number(maxCharsInput.value) || 2200;
 }
 
+function humanizeError(errorOrMessage) {
+  const message = String(errorOrMessage?.message || errorOrMessage || "");
+  const lower = message.toLowerCase();
+  if (message.includes("HTTP 501") || message.includes("--slot-save-path")) {
+    return "当前模型服务不支持自动清空上下文，已继续翻译。";
+  }
+  if (lower.includes("content is empty") || lower.includes("missing model response")) {
+    return "模型返回为空，已自动缩小分段重试；如果仍失败，可点击“重新翻译失败段”。";
+  }
+  if (lower.includes("incomplete") || lower.includes("json")) {
+    return "模型返回不完整，已自动缩小分段重试；如果仍失败，可点击“重新翻译失败段”。";
+  }
+  if (lower.includes("timeout") || message.includes("超过")) {
+    return "该段等待时间过长，已停止等待；可以稍后点击“重新翻译失败段”。";
+  }
+  if (isContextOverflowError(message)) {
+    return "上下文过长，正在清理或缩小分段后重试。";
+  }
+  return message || "未知错误";
+}
+
 async function clearModelContext(reason, { optional = false } = {}) {
   setStatus(`${reason}…`);
   const response = await chrome.runtime.sendMessage({ type: "CLEAR_CONTEXT" });
   if (!response?.ok) {
     const message = response?.error || "清空模型上下文失败";
     if (optional) {
-      setStatus(`清空上下文不可用，继续翻译：${message}`);
+      setStatus(`清空上下文不可用，继续翻译：${humanizeError(message)}`);
       return { ok: false, error: message };
     }
-    throw new Error(message);
+    throw new Error(humanizeError(message));
   }
   return response;
+}
+
+function isFailedTranslation(item) {
+  return String(item?.translation || "").startsWith("翻译失败：");
+}
+
+function failedTranslations() {
+  return translations.filter(isFailedTranslation);
+}
+
+function syncActionButtons() {
+  retryFailedBtn.disabled = !failedTranslations().length;
+  downloadBtn.disabled = !translations.length;
+}
+
+function upsertTranslation(segment, translation) {
+  const index = translations.findIndex((item) => item.id === segment.id);
+  const item = { ...segment, translation };
+  if (index >= 0) translations[index] = item;
+  else translations.push(item);
+  syncActionButtons();
+}
+
+function updateDocumentSummary() {
+  if (!sourceText) {
+    docSummary.textContent = "尚未选择文档。拖入 PDF、DOCX 或 TXT 后，会先显示解析摘要，再由你决定是否开始翻译。";
+    return;
+  }
+  docSummary.textContent = [
+    `文件：${currentFile?.name || "文档"}`,
+    `提取字符：${sourceText.length.toLocaleString("zh-CN")}`,
+    `对照段落：${segments.length}`,
+    "推荐模式：医学文献优化",
+    `每段最大字符：${currentMaxChars()}`,
+  ].join("\n");
 }
 
 function renderBilingualPreview() {
@@ -106,7 +164,8 @@ function buildSegments() {
   translationPreviewBody = null;
   renderBilingualPreview();
   translateBtn.disabled = !segments.length;
-  downloadBtn.disabled = true;
+  syncActionButtons();
+  updateDocumentSummary();
   setStatus(segments.length ? `解析完成：${currentFile?.name || "文档"}\n已生成全文中英文对照视图，共 ${segments.length} 个对照段落。` : "没有提取到可翻译文本。PDF 如果是扫描件，需要 OCR 后再翻译。");
 }
 
@@ -136,6 +195,7 @@ async function translateDocument() {
   translateBtn.disabled = true;
   stopBtn.disabled = false;
   downloadBtn.disabled = true;
+  retryFailedBtn.disabled = true;
   translations = [];
   renderBilingualPreview();
   await clearModelContext("开始翻译前清空模型上下文", { optional: true });
@@ -146,16 +206,16 @@ async function translateDocument() {
     try {
       const response = await translateDocumentSegment(segment, maxChars);
       const translation = response.translations?.[0]?.translation || "";
-      translations.push({ ...segment, translation });
+      upsertTranslation(segment, translation);
       updateTranslationPreview();
     } catch (error) {
-      translations.push({ ...segment, translation: `翻译失败：${error.message}` });
+      upsertTranslation(segment, `翻译失败：${humanizeError(error)}`);
       updateTranslationPreview();
     }
   }
   stopBtn.disabled = true;
   translateBtn.disabled = false;
-  downloadBtn.disabled = !translations.length;
+  syncActionButtons();
   await clearModelContext("文档翻译结束后清空模型上下文", { optional: true });
   setStatus(cancelled ? `已停止：完成 ${translations.length} / ${segments.length} 个对照段落` : `翻译完成：${translations.length} / ${segments.length} 个对照段落`);
 }
@@ -170,10 +230,36 @@ async function translateDocumentSegment(segment, maxChars) {
   if (response?.ok) return response;
   const errorMessage = response?.error || "模型请求失败";
   if (!isContextOverflowError(errorMessage)) throw new Error(errorMessage);
-  await clearModelContext("检测到上下文超限，正在清空后重试当前段");
+  await clearModelContext("检测到上下文超限，正在清空后重试当前段", { optional: true });
   response = await chrome.runtime.sendMessage(request);
   if (!response?.ok) throw new Error(response?.error || "模型请求失败");
   return response;
+}
+
+async function retryFailedTranslations() {
+  const failed = failedTranslations();
+  if (!failed.length) {
+    setStatus("没有需要重新翻译的失败段。");
+    return;
+  }
+  const maxChars = Math.min(currentMaxChars(), 1200);
+  retryFailedBtn.disabled = true;
+  translateBtn.disabled = true;
+  for (let index = 0; index < failed.length; index += 1) {
+    if (cancelled) break;
+    const segment = segments.find((item) => item.id === failed[index].id) || failed[index];
+    setStatus(`正在重新翻译失败段：${index + 1} / ${failed.length}`);
+    try {
+      const response = await translateDocumentSegment(segment, maxChars);
+      upsertTranslation(segment, response.translations?.[0]?.translation || "");
+    } catch (error) {
+      upsertTranslation(segment, `翻译失败：${humanizeError(error)}`);
+    }
+    updateTranslationPreview();
+  }
+  translateBtn.disabled = false;
+  syncActionButtons();
+  setStatus(failedTranslations().length ? `仍有 ${failedTranslations().length} 段失败，可稍后再次重试。` : "失败段已重新翻译完成。");
 }
 
 function downloadBilingualHtml() {
@@ -199,6 +285,7 @@ dropZone.addEventListener("drop", (event) => {
 maxCharsInput.addEventListener("change", () => sourceText && buildSegments());
 translateBtn.addEventListener("click", () => translateDocument().catch((error) => setStatus(`翻译失败：${error.message}`)));
 stopBtn.addEventListener("click", () => { cancelled = true; });
+retryFailedBtn.addEventListener("click", () => retryFailedTranslations().catch((error) => setStatus(`重新翻译失败段出错：${humanizeError(error)}`)));
 downloadBtn.addEventListener("click", downloadBilingualHtml);
 clearContextBtn.addEventListener("click", async () => {
   try {

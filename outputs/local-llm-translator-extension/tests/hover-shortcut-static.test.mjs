@@ -10,7 +10,8 @@ test("hover translation is triggered by Ctrl instead of Shift", () => {
   assert.match(contentScript, /event\.ctrlKey/);
   assert.doesNotMatch(contentScript, /event\.shiftKey/);
   assert.match(contentScript, /按住 Ctrl/);
-  assert.match(popupHtml, /Ctrl \+ 鼠标悬停默认开启/);
+  assert.match(popupHtml, /Ctrl \+ 鼠标悬停段落已默认开启/);
+  assert.doesNotMatch(popupHtml, /id="hover-translate"/);
   assert.doesNotMatch(popupHtml, /Shift \+ 鼠标/);
 });
 

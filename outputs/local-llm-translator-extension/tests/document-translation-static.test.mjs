@@ -12,6 +12,13 @@ test("document translator sends optimized document options to the background wor
   assert.match(documentJs, /maxTokens:\s*4096/);
 });
 
+test("document page shows a parse summary before translation starts", () => {
+  assert.match(documentHtml, /id="doc-summary"/);
+  assert.match(documentJs, /updateDocumentSummary\(\)/);
+  assert.match(documentJs, /医学文献优化/);
+  assert.match(documentJs, /提取字符/);
+});
+
 test("document translator clears model context before and after a document", () => {
   assert.match(documentJs, /clearModelContext\("开始翻译前清空模型上下文",\s*\{\s*optional:\s*true\s*\}\)/);
   assert.match(documentJs, /clearModelContext\("文档翻译结束后清空模型上下文",\s*\{\s*optional:\s*true\s*\}\)/);
@@ -34,4 +41,13 @@ test("document translation falls back to smaller chunks before failing a paragra
   assert.match(serviceWorker, /options\.mode === "document"/);
   assert.match(serviceWorker, /for \(const limit of chunkLimits\)/);
   assert.match(serviceWorker, /1200,\s*800,\s*500/);
+});
+
+test("document page has human-friendly errors and a failed-segment retry action", () => {
+  assert.match(documentHtml, /id="retry-failed"/);
+  assert.match(documentJs, /humanizeError/);
+  assert.match(documentJs, /重新翻译失败段/);
+  assert.match(documentJs, /retryFailedTranslations/);
+  assert.match(documentJs, /模型返回为空/);
+  assert.match(documentJs, /当前模型服务不支持自动清空上下文/);
 });

@@ -1,12 +1,13 @@
 :root { color: #172033; font: 15px/1.65 system-ui, sans-serif; background: #f5f7fb; }
 body { margin: 0; }
 main { width: min(1180px, calc(100% - 32px)); margin: 24px auto; display: grid; gap: 16px; }
-header, #drop-zone, .toolbar, #status, #preview { border: 1px solid #dbe2ee; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(39,55,84,.06); }
+header, #drop-zone, .toolbar, .summary, #status, #preview { border: 1px solid #dbe2ee; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(39,55,84,.06); }
 header { padding: 18px 22px; }
 h1 { margin: 0 0 6px; font-size: 24px; }
 #drop-zone { padding: 28px; text-align: center; border-style: dashed; }
 #drop-zone.drag { background: #eff6ff; border-color: #4f8cff; }
 .toolbar { padding: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.summary { padding: 14px 16px; color: #334155; }
 input[type="number"] { width: 90px; padding: 6px; }
 button { padding: 8px 12px; border: 1px solid #b8c4d6; border-radius: 8px; background: #fff; cursor: pointer; }
 button.primary { background: #2563eb; color: white; border-color: #2563eb; font-weight: 700; }

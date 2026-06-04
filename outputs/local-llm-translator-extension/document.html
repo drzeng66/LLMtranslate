@@ -19,9 +19,11 @@
       <label>每段最大字符 <input id="max-chars" type="number" min="900" max="3000" value="2200"></label>
       <button id="translate" class="primary" disabled>开始翻译</button>
       <button id="stop" disabled>停止</button>
+      <button id="retry-failed" disabled>重新翻译失败段</button>
       <button id="clear-context">清空模型上下文</button>
       <button id="download" disabled>下载中英对照 HTML</button>
     </section>
+    <section id="doc-summary" class="summary">尚未选择文档。拖入 PDF、DOCX 或 TXT 后，会先显示解析摘要，再由你决定是否开始翻译。</section>
     <pre id="status">等待文档…</pre>
     <article id="preview"></article>
   </main>

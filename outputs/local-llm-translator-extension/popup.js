@@ -21,16 +21,10 @@ async function init() {
 }
 
 document.getElementById("translate-page").addEventListener("click", () => activeCommand("TOGGLE_TRANSLATION"));
-document.getElementById("hover-translate").addEventListener("click", () => activeCommand("ENABLE_HOVER_TRANSLATION"));
 document.getElementById("clear-page").addEventListener("click", () => activeCommand("CLEAR_TRANSLATIONS"));
 document.getElementById("document-translate").addEventListener("click", async () => {
   await send({ type: "OPEN_DOCUMENT_TRANSLATOR" });
   setStatus("已打开文档翻译页");
-});
-document.getElementById("clear-context").addEventListener("click", async () => {
-  setStatus("正在清空模型上下文…");
-  const response = await send({ type: "CLEAR_CONTEXT" });
-  setStatus(response?.ok ? "模型上下文已清空" : `清空失败：${response?.error || "未知错误"}`);
 });
 document.getElementById("options").addEventListener("click", () => chrome.runtime.openOptionsPage());
 document.getElementById("test").addEventListener("click", async () => {
