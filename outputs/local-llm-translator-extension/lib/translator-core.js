@@ -209,7 +209,7 @@ function hardSplit(text, maxLength) {
 }
 
 export function splitDocumentIntoSegments(text, options = {}) {
-  const maxChars = clampInt(options.maxChars, 300, 2400, 900);
+  const maxChars = clampInt(options.maxChars, 300, 3000, 900);
   const minChars = clampInt(options.minChars, 80, maxChars, 180);
   const normalized = String(text || "")
     .replace(/\r/g, "")
@@ -266,6 +266,7 @@ export function extractTranslations(response, allowedIds) {
   const content = response?.choices?.[0]?.message?.content;
   if (typeof content !== "string") throw new Error("missing model response content");
   const normalizedContent = stripMarkdownFence(content);
+  if (allowedIds.size === 1) return extractSingleTranslation(normalizedContent, allowedIds);
   const start = normalizedContent.indexOf("[");
   const end = normalizedContent.lastIndexOf("]");
   if (start < 0 || end < start) return extractSingleFallback(normalizedContent, allowedIds);
@@ -280,6 +281,30 @@ function stripMarkdownFence(content) {
     .replace(/^```(?:json)?/i, "")
     .replace(/```$/i, "")
     .trim();
+}
+
+function extractSingleTranslation(content, allowedIds) {
+  const trimmed = String(content || "").trim();
+  if (!trimmed) throw new Error("model response content is empty");
+  if (looksLikeTranslationJson(trimmed)) {
+    const parsed = parseSingleTranslationJson(trimmed);
+    return normalizeTranslationItems(Array.isArray(parsed) ? parsed : [parsed], allowedIds);
+  }
+  const [id] = allowedIds;
+  return [{ id, translation: validateTranslation(id, trimmed) }];
+}
+
+function looksLikeTranslationJson(content) {
+  if (content.startsWith("{")) return true;
+  return /^\[\s*\{/.test(content);
+}
+
+function parseSingleTranslationJson(content) {
+  try {
+    return JSON.parse(content);
+  } catch {
+    throw new Error("model returned incomplete JSON");
+  }
 }
 
 function extractSingleFallback(content, allowedIds) {
@@ -306,7 +331,7 @@ function normalizeTranslationItems(parsed, allowedIds) {
 }
 
 function validateTranslation(id, translation) {
-  if (/[、，,；;]$/.test(translation)) {
+  if (/^\s*[\[{]\s*$/.test(translation)) {
     throw new Error(`incomplete translation for paragraph id: ${id}`);
   }
   return translation;

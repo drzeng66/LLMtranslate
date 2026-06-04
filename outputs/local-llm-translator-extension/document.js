@@ -245,6 +245,7 @@ async function retryFailedTranslations() {
   const maxChars = Math.min(currentMaxChars(), 1200);
   retryFailedBtn.disabled = true;
   translateBtn.disabled = true;
+  await clearModelContext("重新翻译失败段前清空模型上下文", { optional: true });
   for (let index = 0; index < failed.length; index += 1) {
     if (cancelled) break;
     const segment = segments.find((item) => item.id === failed[index].id) || failed[index];
@@ -257,6 +258,7 @@ async function retryFailedTranslations() {
     }
     updateTranslationPreview();
   }
+  await clearModelContext("重新翻译失败段后清空模型上下文", { optional: true });
   translateBtn.disabled = false;
   syncActionButtons();
   setStatus(failedTranslations().length ? `仍有 ${failedTranslations().length} 段失败，可稍后再次重试。` : "失败段已重新翻译完成。");

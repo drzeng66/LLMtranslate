@@ -5,6 +5,7 @@ import {
   endpointAllowed,
   normalizeSettings,
   buildChatRequest,
+  extractTranslations,
   splitDocumentIntoSegments,
   makeDocxPlainText,
 } from "../lib/translator-core.js";
@@ -68,6 +69,53 @@ test("document segmentation supports larger literature chunks", () => {
   const chunks = splitDocumentIntoSegments(text, { maxChars: 2200, minChars: 600 });
   assert.ok(chunks.length > 1);
   assert.ok(chunks.every((item) => item.text.length <= 2860));
+});
+
+test("document segmentation honors the 3000 character UI limit", () => {
+  const text = Array.from({ length: 480 }, () => "alpha").join(" ");
+  const chunks = splitDocumentIntoSegments(text, { maxChars: 3000, minChars: 600 });
+  assert.equal(chunks.length, 1);
+  assert.ok(chunks[0].text.length > 2400);
+});
+
+test("single plain-text translations keep medical citation brackets instead of treating them as JSON", () => {
+  const response = {
+    choices: [{ message: { content: "研究显示该治疗可以降低死亡率 [1,2]。" } }],
+  };
+  const result = extractTranslations(response, new Set(["doc-1"]));
+  assert.deepEqual(result, [{ id: "doc-1", translation: "研究显示该治疗可以降低死亡率 [1,2]。" }]);
+});
+
+test("single plain-text translations may start with reference brackets", () => {
+  const response = {
+    choices: [{ message: { content: "[1] 这是一项随机对照研究。" } }],
+  };
+  const result = extractTranslations(response, new Set(["doc-1"]));
+  assert.deepEqual(result, [{ id: "doc-1", translation: "[1] 这是一项随机对照研究。" }]);
+});
+
+test("single plain-text translations are not failed just because a chunk ends with a comma", () => {
+  const response = {
+    choices: [{ message: { content: "该研究纳入了高危患者，" } }],
+  };
+  const result = extractTranslations(response, new Set(["doc-1"]));
+  assert.deepEqual(result, [{ id: "doc-1", translation: "该研究纳入了高危患者，" }]);
+});
+
+test("single translations still accept valid JSON object responses", () => {
+  const response = {
+    choices: [{ message: { content: '{"id":"doc-1","translation":"有效译文。"}' } }],
+  };
+  const result = extractTranslations(response, new Set(["doc-1"]));
+  assert.deepEqual(result, [{ id: "doc-1", translation: "有效译文。" }]);
+});
+
+test("single translations still accept valid JSON array responses", () => {
+  const response = {
+    choices: [{ message: { content: '[{"id":"doc-1","translation":"有效译文。"}]' } }],
+  };
+  const result = extractTranslations(response, new Set(["doc-1"]));
+  assert.deepEqual(result, [{ id: "doc-1", translation: "有效译文。" }]);
 });
 
 test("docx text xml is converted into paragraph text", () => {

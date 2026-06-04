@@ -22,6 +22,8 @@ test("document page shows a parse summary before translation starts", () => {
 test("document translator clears model context before and after a document", () => {
   assert.match(documentJs, /clearModelContext\("开始翻译前清空模型上下文",\s*\{\s*optional:\s*true\s*\}\)/);
   assert.match(documentJs, /clearModelContext\("文档翻译结束后清空模型上下文",\s*\{\s*optional:\s*true\s*\}\)/);
+  assert.match(documentJs, /clearModelContext\("重新翻译失败段前清空模型上下文",\s*\{\s*optional:\s*true\s*\}\)/);
+  assert.match(documentJs, /clearModelContext\("重新翻译失败段后清空模型上下文",\s*\{\s*optional:\s*true\s*\}\)/);
   assert.match(documentJs, /清空上下文不可用，继续翻译/);
 });
 
