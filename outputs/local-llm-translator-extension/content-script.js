@@ -17,17 +17,30 @@
     lastHoverTarget: null,
   };
 
-  const skippedTags = new Set([
+  const articleSkippedTags = new Set([
     "ASIDE", "BUTTON", "CODE", "FOOTER", "HEADER", "INPUT", "NAV",
     "NOSCRIPT", "PRE", "SCRIPT", "SELECT", "STYLE", "TEXTAREA",
     "LOCAL-LLM-TRANSLATION",
   ]);
-  const skippedSelector = [...skippedTags].map((tag) => tag.toLowerCase()).join(",");
-  const candidateSelector = [
+  const immersiveSkippedTags = new Set([
+    "CODE", "INPUT", "NOSCRIPT", "PRE", "SCRIPT", "SELECT", "STYLE", "TEXTAREA",
+    "LOCAL-LLM-TRANSLATION",
+  ]);
+  const articleSkippedSelector = [...articleSkippedTags].map((tag) => tag.toLowerCase()).join(",");
+  const immersiveSkippedSelector = [...immersiveSkippedTags].map((tag) => tag.toLowerCase()).join(",");
+  const articleCandidateSelector = [
     "p",
     "article li", "main li", "section li", "[role=\"main\"] li",
     "blockquote",
     "h1", "h2", "h3", "h4",
+    "td", "th", "figcaption", "dd", "dt",
+    "article div", "main div", "section div", "[role=\"main\"] div",
+  ].join(", ");
+  const immersiveCandidateSelector = [
+    "span", "a", "button", "label", "summary",
+    "strong", "em", "b", "small",
+    "li", "p", "blockquote",
+    "h1", "h2", "h3", "h4", "h5", "h6",
     "td", "th", "figcaption", "dd", "dt",
     "article div", "main div", "section div", "[role=\"main\"] div",
   ].join(", ");
@@ -42,33 +55,49 @@
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
   }
 
-  function isEligible(node, minTextLength = 12) {
+  function containsEnglishText(text) {
+    return /[A-Za-z][A-Za-z'’.-]{2,}/.test(String(text || ""));
+  }
+
+  function isEligible(node, minTextLength = 12, options = {}) {
+    const skippedSelector = options.skippedSelector || articleSkippedSelector;
+    const requireEnglish = Boolean(options.requireEnglish);
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
     if (node.closest(skippedSelector)) return false;
     if (!isVisible(node)) return false;
     const text = normalizedText(node);
     if (text.length < minTextLength) return false;
+    if (requireEnglish && !containsEnglishText(text)) return false;
     if (/^https?:\/\/\S+$/i.test(text)) return false;
     if (/^[\d\s.,:%+\-()/]+$/.test(text)) return false;
     return true;
   }
 
-  function hasEligibleCandidateDescendant(node, minTextLength = 12) {
-    return [...node.querySelectorAll(candidateSelector)]
-      .some((child) => child !== node && isEligible(child, minTextLength));
+  function hasEligibleCandidateDescendant(node, selector, minTextLength = 12, options = {}) {
+    return [...node.querySelectorAll(selector)]
+      .some((child) => child !== node && isEligible(child, minTextLength, options));
   }
 
   function nearestTranslatableNode(target, minTextLength = 12) {
-    const node = target?.closest?.(candidateSelector);
-    return isEligible(node, minTextLength) ? node : null;
+    const node = target?.closest?.(articleCandidateSelector);
+    return isEligible(node, minTextLength, { skippedSelector: articleSkippedSelector }) ? node : null;
   }
 
-  function collectItems(minTextLength) {
+  function collectArticleItems(minTextLength) {
     const seen = new Set();
-    return [...document.querySelectorAll(candidateSelector)]
-      .filter((node) => isEligible(node, minTextLength))
-      .filter((node) => !/^(DIV|SECTION|ARTICLE|MAIN)$/i.test(node.tagName) || !hasEligibleCandidateDescendant(node, minTextLength))
-      .map((node, index) => ({ node, id: `local-llm-p-${index + 1}`, source: "page", text: normalizedText(node) }))
+    return [...document.querySelectorAll(articleCandidateSelector)]
+      .filter((node) => isEligible(node, minTextLength, { skippedSelector: articleSkippedSelector }))
+      .filter((node) => !/^(DIV|SECTION|ARTICLE|MAIN)$/i.test(node.tagName) || !hasEligibleCandidateDescendant(node, articleCandidateSelector, minTextLength, { skippedSelector: articleSkippedSelector }))
+      .map((node, index) => ({ node, id: `local-llm-article-${index + 1}`, source: "article", text: normalizedText(node) }))
+      .filter((item) => !seen.has(item.text) && seen.add(item.text));
+  }
+
+  function collectImmersiveItems(minTextLength = 3) {
+    const seen = new Set();
+    return [...document.querySelectorAll(immersiveCandidateSelector)]
+      .filter((node) => isEligible(node, minTextLength, { skippedSelector: immersiveSkippedSelector, requireEnglish: true }))
+      .filter((node) => !/^(DIV|SECTION|ARTICLE|MAIN)$/i.test(node.tagName) || !hasEligibleCandidateDescendant(node, immersiveCandidateSelector, minTextLength, { skippedSelector: immersiveSkippedSelector, requireEnglish: true }))
+      .map((node, index) => ({ node, id: `local-llm-immersive-${index + 1}`, source: "immersive", text: normalizedText(node) }))
       .filter((item) => !seen.has(item.text) && seen.add(item.text));
   }
 
@@ -79,7 +108,7 @@
       item.node.insertAdjacentElement("afterend", translation);
     }
     translation.dataset.paragraphId = item.id;
-    translation.dataset.source = item.source || (String(item.id).startsWith("hover-") ? "hover" : "page");
+    translation.dataset.source = item.source || (String(item.id).startsWith("hover-") ? "hover" : "article");
     translation.dataset.failed = String(failed);
     translation.textContent = text;
   }
@@ -103,8 +132,16 @@
     Object.assign(state, { mode: "idle", queue: [], total: 0, completed: 0, failed: [], cancelled: false });
   }
 
-  function hasPageTranslations() {
-    return document.querySelector('local-llm-translation[data-source="page"]') !== null;
+  function hasTranslationsForSource(source) {
+    return document.querySelector(`local-llm-translation[data-source="${source}"]`) !== null;
+  }
+
+  function hasArticleTranslations() {
+    return hasTranslationsForSource("article");
+  }
+
+  function hasImmersiveTranslations() {
+    return hasTranslationsForSource("immersive");
   }
 
   async function processQueue(items, resetProgress = false) {
@@ -152,30 +189,43 @@
     }
   }
 
-  async function translatePage() {
-    updateProgress("收到整页翻译请求，正在准备…");
+  async function translateItemsForSource(source, collectItems, minTextLength, emptyMessage) {
+    updateProgress(source === "immersive" ? "收到沉浸翻译请求，正在准备…" : "收到正文翻译请求，正在准备…");
     if (state.mode === "translating") {
       state.cancelled = true;
-      updateProgress(`正在停止整页翻译 ${state.completed} / ${state.total} 段…`);
+      updateProgress(`正在停止翻译 ${state.completed} / ${state.total} 段…`);
       return;
     }
-    if (hasPageTranslations()) {
+    if ((source === "immersive" ? hasImmersiveTranslations() : hasArticleTranslations())) {
       removeTranslations();
       return;
     }
     removeTranslations();
-    const settings = await chrome.storage.local.get({ minTextLength: 12 });
-    const items = collectItems(settings.minTextLength);
+    const items = collectItems(minTextLength);
     if (!items.length) {
       state.mode = "completed";
-      updateProgress("没有可翻译的正文段落");
+      updateProgress(emptyMessage);
       return;
     }
     await processQueue(items, true);
   }
 
+  async function translateArticle() {
+    const settings = await chrome.storage.local.get({ minTextLength: 12 });
+    await translateItemsForSource("article", collectArticleItems, settings.minTextLength, "没有可翻译的正文段落");
+  }
+
+  async function translateImmersive() {
+    const settings = await chrome.storage.local.get({ minTextLength: 12 });
+    await translateItemsForSource("immersive", collectImmersiveItems, Math.min(3, Number(settings.minTextLength) || 12), "没有可翻译的英文内容");
+  }
+
+  async function translatePage() {
+    return await translateArticle();
+  }
+
   async function toggleTranslation() {
-    return await translatePage();
+    return await translateArticle();
   }
 
   async function translateHoveredNode(event) {
@@ -217,6 +267,14 @@
   }, { capture: true, signal: scriptAbortController.signal });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type === "TRANSLATE_ARTICLE") {
+      translateArticle().then(() => sendResponse({ ok: true })).catch((error) => { showError(error.message); sendResponse({ ok: false, error: error.message }); });
+      return true;
+    }
+    if (message.type === "TRANSLATE_IMMERSIVE") {
+      translateImmersive().then(() => sendResponse({ ok: true })).catch((error) => { showError(error.message); sendResponse({ ok: false, error: error.message }); });
+      return true;
+    }
     if (message.type === "TRANSLATE_PAGE") {
       translatePage().then(() => sendResponse({ ok: true })).catch((error) => { showError(error.message); sendResponse({ ok: false, error: error.message }); });
       return true;
