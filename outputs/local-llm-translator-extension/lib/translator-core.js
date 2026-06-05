@@ -5,9 +5,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   model: "gemma.gguf",
   apiKey: "",
   targetLanguage: "简体中文",
-  batchSize: 6,
-  parallelRequests: 2,
+  batchSize: 10,
+  parallelRequests: 3,
   layoutMode: "compact",
+  selectionTranslationEnabled: true,
   minTextLength: 12,
   maxChunkChars: 360,
   documentMaxChunkChars: 2200,
@@ -60,9 +61,10 @@ export function normalizeSettings(settings = {}) {
     endpointMode,
     baseUrl: normalizeBaseUrl(selectedBaseUrl),
     remoteBaseUrl: normalizeBaseUrl(merged.remoteBaseUrl),
-    batchSize: clampInt(merged.batchSize, 1, 12, DEFAULT_SETTINGS.batchSize),
+    batchSize: clampInt(merged.batchSize, 1, 16, DEFAULT_SETTINGS.batchSize),
     parallelRequests: clampInt(merged.parallelRequests, 1, 4, DEFAULT_SETTINGS.parallelRequests),
     layoutMode: ALLOWED_LAYOUT_MODES.has(merged.layoutMode) ? merged.layoutMode : DEFAULT_SETTINGS.layoutMode,
+    selectionTranslationEnabled: merged.selectionTranslationEnabled !== false,
     minTextLength: clampInt(merged.minTextLength, 1, 200, 12),
     maxChunkChars: clampInt(merged.maxChunkChars, 180, 1200, 360),
     documentMaxChunkChars: clampInt(merged.documentMaxChunkChars, 900, 3000, 2200),
@@ -135,6 +137,17 @@ export function authHeaders(settings) {
   return headers;
 }
 
+export function classifySelectionText(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "none";
+  if (normalized.length > 800) return "none";
+  if (/^https?:\/\/\S+$/i.test(normalized)) return "none";
+  if (/^[\d\s.,:%+\-()/]+$/.test(normalized)) return "none";
+  if (/^[A-Za-z][A-Za-z'’-]{1,40}$/.test(normalized)) return "word";
+  if (/[A-Za-z]/.test(normalized) && (/\s/.test(normalized) || /[.!?。！？,;:]/.test(normalized)) && normalized.length >= 2) return "sentence";
+  return "none";
+}
+
 export function buildChatRequest(settings, items, options = {}) {
   const normalized = normalizeSettings(settings);
   const mode = options.mode || "page";
@@ -149,9 +162,7 @@ export function buildChatRequest(settings, items, options = {}) {
       ? "简体中文 (Simplified Chinese)"
       : normalized.targetLanguage;
   if (items.length === 1) {
-    const systemPrompt = mode === "document"
-      ? `Translate the user's medical academic PDF/document text into ${targetLanguage}. Return only the translated Chinese text. Do not summarize, omit, explain, add markdown, add quotes, or repeat the original text. Preserve medical terminology, drug names, abbreviations, numbers, headings, lists, table-like structure, citations, and paragraph meaning accurately.`
-      : `Translate the user's text into ${targetLanguage}. Return only the translated Chinese text. Do not return JSON, markdown, quotes, explanations, IDs, or the original text. Preserve medical terms accurately.`;
+    const systemPrompt = singleItemSystemPrompt(mode, targetLanguage);
     return {
       model: normalized.model,
       temperature: 0,
@@ -189,6 +200,19 @@ export function buildChatRequest(settings, items, options = {}) {
   };
 }
 
+function singleItemSystemPrompt(mode, targetLanguage) {
+  if (mode === "document") {
+    return `Translate the user's medical academic PDF/document text into ${targetLanguage}. Return only the translated Chinese text. Do not summarize, omit, explain, add markdown, add quotes, or repeat the original text. Preserve medical terminology, drug names, abbreviations, numbers, headings, lists, table-like structure, citations, and paragraph meaning accurately.`;
+  }
+  if (mode === "selection-word") {
+    return `You are a concise bilingual medical dictionary. Explain the selected English word in ${targetLanguage}. Return only the answer, no markdown. Include the main meaning first, then a short medical-context meaning if relevant. Keep it within 2 short lines.`;
+  }
+  if (mode === "selection-sentence") {
+    return `Translate the selected sentence or passage into ${targetLanguage}. Return only the translated Chinese text. Do not explain, summarize, add markdown, add quotes, IDs, or repeat the original text. Preserve medical terminology accurately.`;
+  }
+  return `Translate the user's text into ${targetLanguage}. Return only the translated Chinese text. Do not return JSON, markdown, quotes, explanations, IDs, or the original text. Preserve medical terms accurately.`;
+}
+
 export function buildCompletionRequest(settings, item, options = {}) {
   const normalized = normalizeSettings(settings);
   const mode = options.mode || "page";
@@ -202,9 +226,7 @@ export function buildCompletionRequest(settings, item, options = {}) {
     normalized.targetLanguage === "简体中文"
       ? "简体中文 (Simplified Chinese)"
       : normalized.targetLanguage;
-  const systemInstruction = mode === "document"
-    ? `Translate the following medical academic document text into ${targetLanguage}. Return only the translated Chinese text. Do not summarize, omit, explain, add markdown, add quotes, or repeat the original text. Preserve medical terminology, abbreviations, numbers, headings, citations, and paragraph meaning accurately.`
-    : `Translate the following text into ${targetLanguage}. Return only the translated Chinese text. Do not explain, add markdown, add quotes, or repeat the original text. Preserve medical terms accurately.`;
+  const systemInstruction = completionSystemInstruction(mode, targetLanguage);
   return {
     prompt: `${systemInstruction}\n\nTEXT:\n${item.text}\n\nTRANSLATION:`,
     temperature: 0,
@@ -212,6 +234,19 @@ export function buildCompletionRequest(settings, item, options = {}) {
     n_predict: maxTokens,
     cache_prompt: false,
   };
+}
+
+function completionSystemInstruction(mode, targetLanguage) {
+  if (mode === "document") {
+    return `Translate the following medical academic document text into ${targetLanguage}. Return only the translated Chinese text. Do not summarize, omit, explain, add markdown, add quotes, or repeat the original text. Preserve medical terminology, abbreviations, numbers, headings, citations, and paragraph meaning accurately.`;
+  }
+  if (mode === "selection-word") {
+    return `Act as a concise bilingual medical dictionary. Explain the following selected English word in ${targetLanguage}. Return only the answer, no markdown. Include the main meaning first and a short medical-context meaning if relevant.`;
+  }
+  if (mode === "selection-sentence") {
+    return `Translate the following selected sentence or passage into ${targetLanguage}. Return only the translated Chinese text. Do not explain, summarize, add markdown, add quotes, or repeat the original text. Preserve medical terms accurately.`;
+  }
+  return `Translate the following text into ${targetLanguage}. Return only the translated Chinese text. Do not explain, add markdown, add quotes, or repeat the original text. Preserve medical terms accurately.`;
 }
 
 export function splitTextForTranslation(text, maxLength = DEFAULT_SETTINGS.maxChunkChars) {

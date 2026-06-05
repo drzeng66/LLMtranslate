@@ -16,6 +16,10 @@
     hoverBusy: false,
     lastHoverTarget: null,
     translationCache: new Map(),
+    selectionCache: new Map(),
+    selectionTimer: null,
+    selectionRequestId: 0,
+    lastSelectionSignature: "",
   };
 
   const articleSkippedTags = new Set([
@@ -157,8 +161,103 @@
     updateProgress(`本地翻译失败：${message}`);
   }
 
+  function getSelectedText() {
+    return String(window.getSelection?.()?.toString() || "").replace(/\s+/g, " ").trim();
+  }
+
+  function classifySelectionText(text) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    if (!normalized) return "none";
+    if (normalized.length > 800) return "none";
+    if (/^https?:\/\/\S+$/i.test(normalized)) return "none";
+    if (/^[\d\s.,:%+\-()/]+$/.test(normalized)) return "none";
+    if (/^[A-Za-z][A-Za-z'’-]{1,40}$/.test(normalized)) return "word";
+    if (/[A-Za-z]/.test(normalized) && (/\s/.test(normalized) || /[.!?。！？,;:]/.test(normalized)) && normalized.length >= 2) return "sentence";
+    return "none";
+  }
+
+  function selectionCacheKey(text, mode) {
+    return `${mode}:${cacheKey(text)}`;
+  }
+
+  function hideSelectionPopover() {
+    document.getElementById("local-llm-selection-popover")?.remove();
+    state.lastSelectionSignature = "";
+  }
+
+  function selectionAnchorRect() {
+    const selection = window.getSelection?.();
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect && rect.width >= 0 && rect.height >= 0) return rect;
+    return null;
+  }
+
+  function showSelectionPopover(text, translation, mode, pending = false) {
+    const rect = selectionAnchorRect();
+    if (!rect) return;
+    let popover = document.getElementById("local-llm-selection-popover");
+    if (!popover) {
+      popover = document.createElement("local-llm-selection-popover");
+      document.documentElement.appendChild(popover);
+    }
+    popover.dataset.mode = mode;
+    popover.dataset.pending = String(pending);
+    popover.textContent = "";
+    const source = document.createElement("div");
+    source.className = "local-llm-selection-source";
+    source.textContent = mode === "word" ? text : "选中句段";
+    const result = document.createElement("div");
+    result.className = "local-llm-selection-result";
+    result.textContent = translation;
+    popover.append(source, result);
+    const margin = 8;
+    const top = Math.max(8, rect.bottom + margin);
+    const left = Math.min(Math.max(8, rect.left), (window.innerWidth || 1024) - 340);
+    popover.style.top = `${top}px`;
+    popover.style.left = `${left}px`;
+  }
+
+  async function scheduleSelectionTranslation() {
+    clearTimeout(state.selectionTimer);
+    state.selectionTimer = setTimeout(async () => {
+      const settings = await chrome.storage.local.get({ selectionTranslationEnabled: true });
+      if (settings.selectionTranslationEnabled === false) {
+        hideSelectionPopover();
+        return;
+      }
+      const text = getSelectedText();
+      const mode = classifySelectionText(text);
+      if (mode === "none") {
+        hideSelectionPopover();
+        return;
+      }
+      const signature = `${mode}:${text}`;
+      if (signature === state.lastSelectionSignature) return;
+      state.lastSelectionSignature = signature;
+      const cached = state.selectionCache.get(selectionCacheKey(text, mode));
+      if (cached) {
+        showSelectionPopover(text, cached, mode);
+        return;
+      }
+      const requestId = ++state.selectionRequestId;
+      showSelectionPopover(text, "正在翻译选中文本…", mode, true);
+      try {
+        const response = await chrome.runtime.sendMessage({ type: "TRANSLATE_SELECTION", text });
+        if (requestId !== state.selectionRequestId || getSelectedText() !== text) return;
+        if (!response?.ok) throw new Error(response?.error || "模型请求失败");
+        state.selectionCache.set(selectionCacheKey(text, mode), response.translation || "");
+        showSelectionPopover(text, response.translation || "", response.mode || mode);
+      } catch (error) {
+        if (requestId === state.selectionRequestId) showSelectionPopover(text, `翻译失败：${error.message}`, mode);
+      }
+    }, 260);
+  }
+
   function removeTranslations() {
     document.querySelectorAll("local-llm-translation, #local-llm-progress").forEach((node) => node.remove());
+    hideSelectionPopover();
     Object.assign(state, { mode: "idle", queue: [], total: 0, completed: 0, failed: [], cancelled: false });
   }
 
@@ -200,9 +299,9 @@
   }
 
   async function processQueue(items, resetProgress = false) {
-    const settings = await chrome.storage.local.get({ batchSize: 6, minTextLength: 12, parallelRequests: 2, layoutMode: "compact" });
-    const batchSize = Math.max(1, Math.min(12, Number(settings.batchSize) || 6));
-    const parallelRequests = Math.max(1, Math.min(4, Number(settings.parallelRequests) || 2));
+    const settings = await chrome.storage.local.get({ batchSize: 10, minTextLength: 12, parallelRequests: 3, layoutMode: "compact" });
+    const batchSize = Math.max(1, Math.min(16, Number(settings.batchSize) || 10));
+    const parallelRequests = Math.max(1, Math.min(4, Number(settings.parallelRequests) || 3));
     settings.layoutMode = ["compact", "clear", "translation-only"].includes(settings.layoutMode) ? settings.layoutMode : "compact";
     if (resetProgress) {
       state.total = items.length;
@@ -315,6 +414,24 @@
 
   document.addEventListener("mouseover", handleHoverEvent, { capture: true, signal: scriptAbortController.signal });
   document.addEventListener("mousemove", handleHoverEvent, { capture: true, signal: scriptAbortController.signal });
+  document.addEventListener("selectionchange", () => {
+    if (!getSelectedText()) hideSelectionPopover();
+    scheduleSelectionTranslation().catch((error) => showError(error.message));
+  }, { signal: scriptAbortController.signal });
+  document.addEventListener("mouseup", () => {
+    scheduleSelectionTranslation().catch((error) => showError(error.message));
+  }, { capture: true, signal: scriptAbortController.signal });
+  document.addEventListener("keyup", (event) => {
+    if (event.key === "Escape") {
+      window.getSelection?.()?.removeAllRanges?.();
+      hideSelectionPopover();
+      return;
+    }
+    scheduleSelectionTranslation().catch((error) => showError(error.message));
+  }, { capture: true, signal: scriptAbortController.signal });
+  document.addEventListener("mousedown", (event) => {
+    if (!event.target?.closest?.("local-llm-selection-popover") && !getSelectedText()) hideSelectionPopover();
+  }, { capture: true, signal: scriptAbortController.signal });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Control" && state.lastHoverTarget) {
       translateHoveredNode({ target: state.lastHoverTarget, ctrlKey: true }).catch((error) => showError(error.message));

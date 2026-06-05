@@ -60,3 +60,37 @@ local-llm-translation[data-failed="true"] {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22) !important;
   font: 500 13px/1.2 system-ui, sans-serif !important;
 }
+
+local-llm-selection-popover {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  max-width: 360px !important;
+  min-width: 180px !important;
+  padding: 10px 12px !important;
+  border: 1px solid rgba(30, 64, 175, 0.18) !important;
+  border-radius: 12px !important;
+  background: rgba(17, 24, 39, 0.96) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28) !important;
+  font: 400 13px/1.55 system-ui, sans-serif !important;
+  pointer-events: auto !important;
+}
+
+local-llm-selection-popover[data-mode="word"] {
+  max-width: 300px !important;
+}
+
+local-llm-selection-popover[data-pending="true"] {
+  opacity: 0.86 !important;
+}
+
+local-llm-selection-popover .local-llm-selection-source {
+  margin-bottom: 4px !important;
+  color: #bfdbfe !important;
+  font-weight: 650 !important;
+}
+
+local-llm-selection-popover .local-llm-selection-result {
+  color: #f9fafb !important;
+  white-space: pre-wrap !important;
+}

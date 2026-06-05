@@ -7,6 +7,7 @@ import {
   normalizeSettings,
   buildChatRequest,
   buildCompletionRequest,
+  classifySelectionText,
   completionEndpoint,
   extractTranslations,
   extractCompletionTranslation,
@@ -45,13 +46,15 @@ test("single translation request uses low latency defaults", () => {
 });
 
 test("page translation defaults favor local throughput and compact bilingual layout", () => {
-  assert.equal(DEFAULT_SETTINGS.batchSize, 6);
-  assert.equal(DEFAULT_SETTINGS.parallelRequests, 2);
+  assert.equal(DEFAULT_SETTINGS.batchSize, 10);
+  assert.equal(DEFAULT_SETTINGS.parallelRequests, 3);
   assert.equal(DEFAULT_SETTINGS.layoutMode, "compact");
-  const normalized = normalizeSettings({ batchSize: 20, parallelRequests: 9, layoutMode: "invalid" });
-  assert.equal(normalized.batchSize, 12);
+  assert.equal(DEFAULT_SETTINGS.selectionTranslationEnabled, true);
+  const normalized = normalizeSettings({ batchSize: 20, parallelRequests: 9, layoutMode: "invalid", selectionTranslationEnabled: false });
+  assert.equal(normalized.batchSize, 16);
   assert.equal(normalized.parallelRequests, 4);
   assert.equal(normalized.layoutMode, "compact");
+  assert.equal(normalized.selectionTranslationEnabled, false);
 });
 
 test("multi-item page requests are sent as one JSON batch with enough output budget", () => {
@@ -67,6 +70,27 @@ test("multi-item page requests are sent as one JSON batch with enough output bud
   assert.match(req.messages[0].content, /Return JSON array only/);
   assert.equal(req.max_tokens >= 2048, true);
   assert.equal(JSON.parse(req.messages[1].content).length, 4);
+});
+
+test("selection text is classified as word, sentence, or none", () => {
+  assert.equal(classifySelectionText("mortality"), "word");
+  assert.equal(classifySelectionText("mother-in-law"), "word");
+  assert.equal(classifySelectionText("The treatment reduced mortality."), "sentence");
+  assert.equal(classifySelectionText("   "), "none");
+  assert.equal(classifySelectionText("https://example.com"), "none");
+});
+
+test("selection translation requests use low-latency word and sentence prompts", () => {
+  const wordReq = buildChatRequest(DEFAULT_SETTINGS, [{ id: "sel-1", text: "mortality" }], { mode: "selection-word", maxTokens: 160 });
+  assert.equal(wordReq.max_tokens, 160);
+  assert.match(wordReq.messages[0].content, /dictionary/i);
+  assert.match(wordReq.messages[0].content, /medical/i);
+  assert.doesNotMatch(wordReq.messages[0].content, /Return JSON array/i);
+
+  const sentenceReq = buildChatRequest(DEFAULT_SETTINGS, [{ id: "sel-2", text: "The treatment reduced mortality." }], { mode: "selection-sentence", maxTokens: 256 });
+  assert.equal(sentenceReq.max_tokens, 256);
+  assert.match(sentenceReq.messages[0].content, /selected sentence/i);
+  assert.match(sentenceReq.messages[0].content, /Return only/);
 });
 
 test("llama.cpp native completion endpoint is derived from the web UI root", () => {

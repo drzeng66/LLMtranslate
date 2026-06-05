@@ -57,6 +57,31 @@ test("background worker attempts true multi-item batch translation before per-it
   assert.match(serviceWorker, /falling back to per-item translation/);
 });
 
+test("selection translation is default-on with transient popover behavior", () => {
+  assert.match(contentScript, /selectionTranslationEnabled/);
+  assert.match(contentScript, /function scheduleSelectionTranslation/);
+  assert.match(contentScript, /function showSelectionPopover/);
+  assert.match(contentScript, /function hideSelectionPopover/);
+  assert.match(contentScript, /local-llm-selection-popover/);
+  assert.match(contentScript, /selectionchange/);
+  assert.match(contentScript, /document\.addEventListener\("mouseup"/);
+  assert.match(contentScript, /event\.key === "Escape"/);
+});
+
+test("background worker handles selected word and sentence translation", () => {
+  assert.match(serviceWorker, /message\.type === "TRANSLATE_SELECTION"/);
+  assert.match(serviceWorker, /async function translateSelection/);
+  assert.match(serviceWorker, /selection-word/);
+  assert.match(serviceWorker, /selection-sentence/);
+});
+
+test("selection popover has floating styles and does not affect page layout", () => {
+  assert.match(contentStyle, /local-llm-selection-popover/);
+  assert.match(contentStyle, /position: fixed/);
+  assert.match(contentStyle, /z-index: 2147483647/);
+  assert.match(contentStyle, /data-mode="word"/);
+});
+
 test("translation nodes carry layout and text-length metadata for compact rendering", () => {
   assert.match(contentScript, /dataset\.layout/);
   assert.match(contentScript, /dataset\.textLength/);

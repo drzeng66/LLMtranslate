@@ -10,6 +10,7 @@ const fields = {
   batchSize: document.getElementById("batch-size"),
   parallelRequests: document.getElementById("parallel-requests"),
   layoutMode: document.getElementById("layout-mode"),
+  selectionTranslationEnabled: document.getElementById("selection-translation-enabled"),
   minTextLength: document.getElementById("min-text-length"),
   maxChunkChars: document.getElementById("max-chunk-chars"),
   retryCount: document.getElementById("retry-count"),
@@ -19,7 +20,10 @@ const status = document.getElementById("status");
 
 function render(settings) {
   const normalized = normalizeSettings(settings);
-  for (const [key, input] of Object.entries(fields)) input.value = normalized[key];
+  for (const [key, input] of Object.entries(fields)) {
+    if (input.type === "checkbox") input.checked = Boolean(normalized[key]);
+    else input.value = normalized[key];
+  }
 }
 
 function readForm() {
@@ -33,6 +37,7 @@ function readForm() {
     batchSize: Number(fields.batchSize.value),
     parallelRequests: Number(fields.parallelRequests.value),
     layoutMode: fields.layoutMode.value,
+    selectionTranslationEnabled: fields.selectionTranslationEnabled.checked,
     minTextLength: Number(fields.minTextLength.value),
     maxChunkChars: Number(fields.maxChunkChars.value),
     retryCount: Number(fields.retryCount.value),

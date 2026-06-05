@@ -4,6 +4,7 @@ import {
   authHeaders,
   buildChatRequest,
   buildCompletionRequest,
+  classifySelectionText,
   chatEndpoint,
   completionEndpoint,
   extractCompletionTranslation,
@@ -62,6 +63,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
+  if (message.type === "TRANSLATE_SELECTION") {
+    translateSelection(message.text)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message.type === "TEST_CONNECTION") {
     testConnection()
       .then((models) => sendResponse({ ok: true, models }))
@@ -86,6 +93,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 });
+
+async function translateSelection(text) {
+  const mode = classifySelectionText(text);
+  if (mode === "none") throw new Error("没有可翻译的选中文本");
+  const item = { id: `selection-${Date.now()}`, text: String(text || "").replace(/\s+/g, " ").trim() };
+  const options = {
+    mode: mode === "word" ? "selection-word" : "selection-sentence",
+    maxTokens: mode === "word" ? 160 : 384,
+    maxChunkChars: 900,
+  };
+  const [result] = await translateOneChunk(item, await getSettings(), options);
+  return { mode, translation: result.translation };
+}
 
 async function translateBatch(items, options = {}) {
   const settings = await getSettings();
