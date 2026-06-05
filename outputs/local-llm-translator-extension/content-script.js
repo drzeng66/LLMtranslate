@@ -18,12 +18,19 @@
   };
 
   const skippedTags = new Set([
-    "ASIDE", "CODE", "FOOTER", "HEADER", "INPUT", "NAV",
-    "NOSCRIPT", "PRE", "SCRIPT", "STYLE", "TEXTAREA",
+    "ASIDE", "BUTTON", "CODE", "FOOTER", "HEADER", "INPUT", "NAV",
+    "NOSCRIPT", "PRE", "SCRIPT", "SELECT", "STYLE", "TEXTAREA",
     "LOCAL-LLM-TRANSLATION",
   ]);
   const skippedSelector = [...skippedTags].map((tag) => tag.toLowerCase()).join(",");
-  const candidateSelector = "p, article li, main li, blockquote, h1, h2, h3, h4, section p, td";
+  const candidateSelector = [
+    "p",
+    "article li", "main li", "section li", "[role=\"main\"] li",
+    "blockquote",
+    "h1", "h2", "h3", "h4",
+    "td", "th", "figcaption", "dd", "dt",
+    "article div", "main div", "section div", "[role=\"main\"] div",
+  ].join(", ");
 
   function normalizedText(node) {
     return String(node.innerText || node.textContent || "").replace(/\s+/g, " ").trim();
@@ -46,6 +53,11 @@
     return true;
   }
 
+  function hasEligibleCandidateDescendant(node, minTextLength = 12) {
+    return [...node.querySelectorAll(candidateSelector)]
+      .some((child) => child !== node && isEligible(child, minTextLength));
+  }
+
   function nearestTranslatableNode(target, minTextLength = 12) {
     const node = target?.closest?.(candidateSelector);
     return isEligible(node, minTextLength) ? node : null;
@@ -55,7 +67,8 @@
     const seen = new Set();
     return [...document.querySelectorAll(candidateSelector)]
       .filter((node) => isEligible(node, minTextLength))
-      .map((node, index) => ({ node, id: `local-llm-p-${index + 1}`, text: normalizedText(node) }))
+      .filter((node) => !/^(DIV|SECTION|ARTICLE|MAIN)$/i.test(node.tagName) || !hasEligibleCandidateDescendant(node, minTextLength))
+      .map((node, index) => ({ node, id: `local-llm-p-${index + 1}`, source: "page", text: normalizedText(node) }))
       .filter((item) => !seen.has(item.text) && seen.add(item.text));
   }
 
@@ -66,6 +79,7 @@
       item.node.insertAdjacentElement("afterend", translation);
     }
     translation.dataset.paragraphId = item.id;
+    translation.dataset.source = item.source || (String(item.id).startsWith("hover-") ? "hover" : "page");
     translation.dataset.failed = String(failed);
     translation.textContent = text;
   }
@@ -87,6 +101,10 @@
   function removeTranslations() {
     document.querySelectorAll("local-llm-translation, #local-llm-progress").forEach((node) => node.remove());
     Object.assign(state, { mode: "idle", queue: [], total: 0, completed: 0, failed: [], cancelled: false });
+  }
+
+  function hasPageTranslations() {
+    return document.querySelector('local-llm-translation[data-source="page"]') !== null;
   }
 
   async function processQueue(items, resetProgress = false) {
@@ -134,36 +152,30 @@
     }
   }
 
-  async function toggleTranslation() {
-    updateProgress("收到翻译请求，正在准备…");
-    if (state.mode === "idle") {
-      const settings = await chrome.storage.local.get({ minTextLength: 12 });
-      const items = collectItems(settings.minTextLength);
-      if (!items.length) {
-        state.mode = "completed";
-        updateProgress("没有可翻译的正文段落");
-        return;
-      }
-      await processQueue(items, true);
-      return;
-    }
+  async function translatePage() {
+    updateProgress("收到整页翻译请求，正在准备…");
     if (state.mode === "translating") {
       state.cancelled = true;
+      updateProgress(`正在停止整页翻译 ${state.completed} / ${state.total} 段…`);
       return;
     }
-    if (state.mode === "paused") {
-      const retryItems = [...state.failed, ...state.queue];
-      state.failed = [];
-      await processQueue(retryItems);
-      return;
-    }
-    if (state.mode === "completed" && state.failed.length) {
-      const retryItems = [...state.failed];
-      state.failed = [];
-      await processQueue(retryItems);
+    if (hasPageTranslations()) {
+      removeTranslations();
       return;
     }
     removeTranslations();
+    const settings = await chrome.storage.local.get({ minTextLength: 12 });
+    const items = collectItems(settings.minTextLength);
+    if (!items.length) {
+      state.mode = "completed";
+      updateProgress("没有可翻译的正文段落");
+      return;
+    }
+    await processQueue(items, true);
+  }
+
+  async function toggleTranslation() {
+    return await translatePage();
   }
 
   async function translateHoveredNode(event) {
@@ -173,7 +185,7 @@
     if (!node || node.dataset.localLlmHoverTranslated === "true") return;
     state.hoverBusy = true;
     node.dataset.localLlmHoverTranslated = "true";
-    const item = { node, id: `hover-${Date.now()}`, text: normalizedText(node) };
+    const item = { node, id: `hover-${Date.now()}`, source: "hover", text: normalizedText(node) };
     insertTranslation(item, "正在翻译该段…");
     try {
       const response = await chrome.runtime.sendMessage({ type: "TRANSLATE_BATCH", items: [{ id: item.id, text: item.text }] });
@@ -205,6 +217,10 @@
   }, { capture: true, signal: scriptAbortController.signal });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type === "TRANSLATE_PAGE") {
+      translatePage().then(() => sendResponse({ ok: true })).catch((error) => { showError(error.message); sendResponse({ ok: false, error: error.message }); });
+      return true;
+    }
     if (message.type === "TOGGLE_TRANSLATION") {
       toggleTranslation().then(() => sendResponse({ ok: true })).catch((error) => { showError(error.message); sendResponse({ ok: false, error: error.message }); });
       return true;

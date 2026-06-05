@@ -20,7 +20,7 @@ async function init() {
   endpointLabel.textContent = settings.endpointMode === "remote" ? "远程 FRP" : settings.endpointMode === "custom" ? "自定义" : "本机";
 }
 
-document.getElementById("translate-page").addEventListener("click", () => activeCommand("TOGGLE_TRANSLATION"));
+document.getElementById("translate-page").addEventListener("click", () => activeCommand("TRANSLATE_PAGE"));
 document.getElementById("clear-page").addEventListener("click", () => activeCommand("CLEAR_TRANSLATIONS"));
 document.getElementById("document-translate").addEventListener("click", async () => {
   await send({ type: "OPEN_DOCUMENT_TRANSLATOR" });

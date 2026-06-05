@@ -48,7 +48,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
   try {
     await ensureInjected(tab.id);
-    await chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_TRANSLATION" });
+    await chrome.tabs.sendMessage(tab.id, { type: "TRANSLATE_PAGE" });
   } catch (error) {
     console.warn("Unable to translate this page:", error);
     await showStartupError(tab.id, error.message);
