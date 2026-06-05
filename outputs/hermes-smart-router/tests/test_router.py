@@ -6,6 +6,7 @@ from router import (
     RouteDecision,
     chat_completion_to_sse,
     codex_response_to_chat_completion_bytes,
+    default_medical_strong_providers,
     default_strong_providers,
     build_responses_payload,
     choose_route,
@@ -44,13 +45,13 @@ class RouterDecisionTests(unittest.TestCase):
     def test_doctor_workstation_query_routes_strong(self):
         payload = {"messages": [{"role": "user", "content": "医生工作站如何查询检验报告？"}]}
         decision = choose_route(payload)
-        self.assertEqual(decision.route, "strong")
+        self.assertEqual(decision.route, "medical_strong")
         self.assertIn("medical-system", decision.reason)
 
     def test_lis_critical_value_routes_strong(self):
         payload = {"messages": [{"role": "user", "content": "LIS 查询危急值流程怎么操作？"}]}
         decision = choose_route(payload)
-        self.assertEqual(decision.route, "strong")
+        self.assertEqual(decision.route, "medical_strong")
         self.assertIn("medical-system", decision.reason)
 
     def test_medical_record_plain_translation_routes_local(self):
@@ -61,7 +62,7 @@ class RouterDecisionTests(unittest.TestCase):
     def test_lab_result_judgement_routes_strong(self):
         payload = {"messages": [{"role": "user", "content": "帮我判断这个检验结果是否异常：白细胞 18。"}]}
         decision = choose_route(payload)
-        self.assertEqual(decision.route, "strong")
+        self.assertEqual(decision.route, "medical_strong")
         self.assertIn("medical-system", decision.reason)
 
     def test_multimodal_content_routes_strong(self):
@@ -101,6 +102,9 @@ class RouterDecisionTests(unittest.TestCase):
 
     def test_strong_provider_chain_prefers_openai_codex(self):
         self.assertEqual(default_strong_providers(), ["openai-codex", "Api.apikey.fun"])
+
+    def test_medical_strong_provider_chain_uses_openai_codex_only(self):
+        self.assertEqual(default_medical_strong_providers(), ["openai-codex"])
 
     def test_build_responses_payload_moves_system_to_instructions(self):
         payload = {

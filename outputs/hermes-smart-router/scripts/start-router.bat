@@ -5,5 +5,7 @@ set HERMES_ROUTER_PORT=8788
 set HERMES_ROUTER_LOCAL_PROVIDER=llamaccp
 set HERMES_ROUTER_LOCAL_MODEL=gemma.gguf
 set HERMES_ROUTER_STRONG_PROVIDERS=openai-codex,Api.apikey.fun
+set HERMES_ROUTER_MEDICAL_STRONG_PROVIDERS=openai-codex
 set HERMES_ROUTER_STRONG_MODEL=gpt-5.5
+set HERMES_ROUTER_DEBUG_LOG=%~dp0..\router-debug.log
 "C:\Users\zengxiaofeng\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" "%~dp0..\router.py"

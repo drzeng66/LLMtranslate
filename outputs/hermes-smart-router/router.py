@@ -26,6 +26,7 @@ DEFAULT_PORT = 8788
 DEFAULT_LOCAL_PROVIDER = "llamaccp"
 DEFAULT_STRONG_PROVIDER = "openai-codex"
 DEFAULT_STRONG_FALLBACK_PROVIDER = "Api.apikey.fun"
+DEFAULT_MEDICAL_STRONG_PROVIDER = "openai-codex"
 DEFAULT_HERMES_AGENT_DIR = r"C:\Users\zengxiaofeng\AppData\Local\hermes\hermes-agent"
 
 STRONG_KEYWORDS = [
@@ -140,7 +141,7 @@ def choose_route(payload: Dict[str, Any]) -> RouteDecision:
         simple_hit = first_keyword(lowered, MEDICAL_SIMPLE_LOCAL_KEYWORDS)
         if simple_hit and not force_hit:
             return RouteDecision("local", f"medical-simple:{simple_hit}")
-        return RouteDecision("strong", f"medical-system:{force_hit or medical_hit}")
+        return RouteDecision("medical_strong", f"medical-system:{force_hit or medical_hit}")
 
     for keyword in STRONG_KEYWORDS:
         if keyword.lower() in lowered:
@@ -177,6 +178,16 @@ def default_strong_providers() -> list[str]:
         if provider and provider.lower() not in {p.lower() for p in providers}:
             providers.append(provider)
     return providers
+
+
+def default_medical_strong_providers() -> list[str]:
+    configured = os.getenv("HERMES_ROUTER_MEDICAL_STRONG_PROVIDERS", "").strip()
+    if configured:
+        providers = [p.strip() for p in configured.split(",") if p.strip()]
+        if providers:
+            return providers
+    provider = os.getenv("HERMES_ROUTER_MEDICAL_STRONG_PROVIDER", DEFAULT_MEDICAL_STRONG_PROVIDER).strip()
+    return [provider or DEFAULT_MEDICAL_STRONG_PROVIDER]
 
 
 def should_fallback_to_strong(status_code: int | None, body_text: str) -> bool:
@@ -226,6 +237,8 @@ def resolve_backend(kind: str, requested_override: str | None = None) -> Backend
 def resolve_backend_candidates(kind: str) -> list[Backend]:
     if kind == "local":
         return [resolve_backend("local")]
+    if kind == "medical_strong":
+        return [resolve_backend("strong", provider) for provider in default_medical_strong_providers()]
     return [resolve_backend("strong", provider) for provider in default_strong_providers()]
 
 

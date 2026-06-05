@@ -1,6 +1,6 @@
 # Hermes Smart Router
 
-本地 OpenAI-compatible 代理：普通文本任务走本地 llama.cpp，复杂/多模态/深度推理/本地失败自动升级到 5.5；强模型优先使用 OpenAI ChatGPT/Codex 5.5，失败后再使用 apikey.fun。
+本地 OpenAI-compatible 代理：普通文本任务走本地 llama.cpp，复杂/多模态/深度推理/本地失败自动升级到 5.5；强模型优先使用 OpenAI ChatGPT/Codex 5.5，普通强模型失败后再使用 apikey.fun。
 
 ## 端点
 
@@ -13,6 +13,7 @@
 
 - 本地：Hermes custom provider `llamaccp`，模型覆盖为 `gemma.gguf`
 - 强模型优先链：Hermes provider `openai-codex` → custom provider `Api.apikey.fun`，模型 `gpt-5.5`
+- 医疗系统强模型链：Hermes provider `openai-codex`，默认不静默回退 `Api.apikey.fun`
 
 ## 启动
 
@@ -34,9 +35,9 @@ C:\Users\zengxiaofeng\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe 
 
 走 5.5：多模态/图片、深度推理、复杂架构、复杂调试、跨文件重构、高风险医学/法律/财务判断、长上下文接近本地上限。
 
-医生工作站、HIS/LIS/PACS、医嘱、检验检查、报告查询、危急值、费用汇总等医疗系统/查询/操作类任务默认走 5.5。只有非常明确的简单文本子任务（如单纯翻译、格式整理、提取字段、生成 JSON、普通总结）才走本地。
+医生工作站、HIS/LIS/PACS、医嘱、检验检查、报告查询、危急值、费用汇总等医疗系统/查询/操作类任务默认走 `medical_strong`，只调用 OpenAI `openai-codex`。只有非常明确的简单文本子任务（如单纯翻译、格式整理、提取字段、生成 JSON、普通总结）才走本地。
 
-本地返回上下文超限、429、5xx 或超时，会自动 fallback 到 5.5；5.5 优先尝试 `openai-codex`，如果 OpenAI/ChatGPT OAuth、协议、限流或模型错误导致失败，会继续尝试 `Api.apikey.fun`。
+本地返回上下文超限、429、5xx 或超时，会自动 fallback 到 5.5；普通强模型任务优先尝试 `openai-codex`，如果 OpenAI/ChatGPT OAuth、协议、限流或模型错误导致失败，会继续尝试 `Api.apikey.fun`。医疗系统强模型任务默认只尝试 `openai-codex`，避免医生工作站工作误用 apikey.fun。
 
 ## 兼容性说明
 
