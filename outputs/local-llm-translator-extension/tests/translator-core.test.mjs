@@ -44,6 +44,31 @@ test("single translation request uses low latency defaults", () => {
   assert.equal(req.max_tokens, 384);
 });
 
+test("page translation defaults favor local throughput and compact bilingual layout", () => {
+  assert.equal(DEFAULT_SETTINGS.batchSize, 6);
+  assert.equal(DEFAULT_SETTINGS.parallelRequests, 2);
+  assert.equal(DEFAULT_SETTINGS.layoutMode, "compact");
+  const normalized = normalizeSettings({ batchSize: 20, parallelRequests: 9, layoutMode: "invalid" });
+  assert.equal(normalized.batchSize, 12);
+  assert.equal(normalized.parallelRequests, 4);
+  assert.equal(normalized.layoutMode, "compact");
+});
+
+test("multi-item page requests are sent as one JSON batch with enough output budget", () => {
+  const req = buildChatRequest(
+    { ...DEFAULT_SETTINGS, model: "gemma.gguf" },
+    [
+      { id: "p1", text: "Hello world." },
+      { id: "p2", text: "Open settings." },
+      { id: "p3", text: "Read later." },
+      { id: "p4", text: "Search feeds." },
+    ],
+  );
+  assert.match(req.messages[0].content, /Return JSON array only/);
+  assert.equal(req.max_tokens >= 2048, true);
+  assert.equal(JSON.parse(req.messages[1].content).length, 4);
+});
+
 test("llama.cpp native completion endpoint is derived from the web UI root", () => {
   assert.equal(completionEndpoint("http://frp4.ccszxc.site:14688/v1"), "http://frp4.ccszxc.site:14688/completion");
   assert.equal(completionEndpoint("http://frp4.ccszxc.site:14688/#"), "http://frp4.ccszxc.site:14688/completion");

@@ -5,7 +5,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   model: "gemma.gguf",
   apiKey: "",
   targetLanguage: "简体中文",
-  batchSize: 1,
+  batchSize: 6,
+  parallelRequests: 2,
+  layoutMode: "compact",
   minTextLength: 12,
   maxChunkChars: 360,
   documentMaxChunkChars: 2200,
@@ -20,6 +22,8 @@ const ALLOWED_ENDPOINTS = new Set([
   "localhost",
   "frp4.ccszxc.site",
 ]);
+
+const ALLOWED_LAYOUT_MODES = new Set(["compact", "clear", "translation-only"]);
 
 export function normalizeBaseUrl(baseUrl) {
   const raw = String(baseUrl || DEFAULT_SETTINGS.baseUrl).trim();
@@ -56,7 +60,9 @@ export function normalizeSettings(settings = {}) {
     endpointMode,
     baseUrl: normalizeBaseUrl(selectedBaseUrl),
     remoteBaseUrl: normalizeBaseUrl(merged.remoteBaseUrl),
-    batchSize: clampInt(merged.batchSize, 1, 3, 1),
+    batchSize: clampInt(merged.batchSize, 1, 12, DEFAULT_SETTINGS.batchSize),
+    parallelRequests: clampInt(merged.parallelRequests, 1, 4, DEFAULT_SETTINGS.parallelRequests),
+    layoutMode: ALLOWED_LAYOUT_MODES.has(merged.layoutMode) ? merged.layoutMode : DEFAULT_SETTINGS.layoutMode,
     minTextLength: clampInt(merged.minTextLength, 1, 200, 12),
     maxChunkChars: clampInt(merged.maxChunkChars, 180, 1200, 360),
     documentMaxChunkChars: clampInt(merged.documentMaxChunkChars, 900, 3000, 2200),
@@ -167,7 +173,7 @@ export function buildChatRequest(settings, items, options = {}) {
     model: normalized.model,
     temperature: 0,
     stream: false,
-    max_tokens: mode === "document" ? Math.min(8192, Math.max(maxTokens, items.length * 1024)) : Math.min(2048, Math.max(512, items.length * 512)),
+    max_tokens: mode === "document" ? Math.min(8192, Math.max(maxTokens, items.length * 1024)) : Math.min(4096, Math.max(768, items.length * 512)),
     messages: [
       {
         role: "system",

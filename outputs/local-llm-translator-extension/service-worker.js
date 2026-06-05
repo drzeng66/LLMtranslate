@@ -88,14 +88,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 async function translateBatch(items, options = {}) {
-  if (items.length === 1) return [await translateItemWithChunks(items[0], options)];
+  const settings = await getSettings();
+  if (!items.length) return [];
+  if (items.length === 1) return [await translateItemWithChunks(items[0], options, settings)];
+  if (canTranslateAsSingleBatch(items, options, settings)) {
+    try {
+      return await translateOneChunk(items, settings, options);
+    } catch (error) {
+      console.warn("Batch translation failed; falling back to per-item translation:", error);
+    }
+  }
   const translatedItems = [];
-  for (const item of items) translatedItems.push(await translateItemWithChunks(item, options));
+  for (const item of items) translatedItems.push(await translateItemWithChunks(item, options, settings));
   return translatedItems;
 }
 
-async function translateItemWithChunks(item, options = {}) {
-  const settings = await getSettings();
+function canTranslateAsSingleBatch(items, options, settings) {
+  if (options.mode === "document") return false;
+  const chunkLimit = Number(options.maxChunkChars) || settings.maxChunkChars;
+  return items.every((item) => splitTextForTranslation(item.text, chunkLimit).length === 1);
+}
+
+async function translateItemWithChunks(item, options = {}, knownSettings) {
+  const settings = knownSettings || (await getSettings());
   const chunkLimit = Number(options.maxChunkChars)
     || (options.mode === "document" ? settings.documentMaxChunkChars : settings.maxChunkChars);
   const chunkLimits = options.mode === "document" ? documentFallbackChunkLimits(chunkLimit) : [chunkLimit];

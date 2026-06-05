@@ -15,6 +15,7 @@
     hoverEnabled: true,
     hoverBusy: false,
     lastHoverTarget: null,
+    translationCache: new Map(),
   };
 
   const articleSkippedTags = new Set([
@@ -101,7 +102,34 @@
       .filter((item) => !seen.has(item.text) && seen.add(item.text));
   }
 
-  function insertTranslation(item, text, failed = false) {
+  function isInViewport(node) {
+    const rect = node.getBoundingClientRect();
+    const height = window.innerHeight || document.documentElement.clientHeight || 0;
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    return rect.bottom >= 0 && rect.right >= 0 && rect.top <= height && rect.left <= width;
+  }
+
+  function sortItemsForTranslation(items) {
+    return [...items].sort((a, b) => {
+      const aVisible = isInViewport(a.node) ? 0 : 1;
+      const bVisible = isInViewport(b.node) ? 0 : 1;
+      if (aVisible !== bVisible) return aVisible - bVisible;
+      return a.node.getBoundingClientRect().top - b.node.getBoundingClientRect().top;
+    });
+  }
+
+  function cacheKey(text) {
+    return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function textLengthClass(text) {
+    const length = String(text || "").length;
+    if (length <= 36) return "short";
+    if (length <= 140) return "medium";
+    return "long";
+  }
+
+  function insertTranslation(item, text, failed = false, layoutMode = "compact") {
     let translation = item.node.nextElementSibling;
     if (!translation || translation.tagName !== "LOCAL-LLM-TRANSLATION") {
       translation = document.createElement("local-llm-translation");
@@ -109,6 +137,8 @@
     }
     translation.dataset.paragraphId = item.id;
     translation.dataset.source = item.source || (String(item.id).startsWith("hover-") ? "hover" : "article");
+    translation.dataset.layout = layoutMode;
+    translation.dataset.textLength = textLengthClass(item.text || text);
     translation.dataset.failed = String(failed);
     translation.textContent = text;
   }
@@ -144,41 +174,66 @@
     return hasTranslationsForSource("immersive");
   }
 
+  async function translateBatchAndInsert(batch, settings) {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "TRANSLATE_BATCH",
+        items: batch.map(({ id, text }) => ({ id, text })),
+      });
+      if (!response?.ok) throw new Error(response?.error || "模型请求失败");
+      const translatedById = new Map(response.translations.map(({ id, translation }) => [id, translation]));
+      for (const item of batch) {
+        const translated = translatedById.get(item.id);
+        if (!translated) throw new Error(`缺少段落译文：${item.id}`);
+        state.translationCache.set(cacheKey(item.text), translated);
+        insertTranslation(item, translated, false, settings.layoutMode);
+        state.completed += 1;
+      }
+    } catch (error) {
+      for (const item of batch) {
+        insertTranslation(item, `翻译失败：${error.message}`, true, settings.layoutMode);
+        state.failed.push(item);
+      }
+    } finally {
+      updateProgress(`本地翻译 ${Math.min(state.completed + state.failed.length, state.total)} / ${state.total} 段…`);
+    }
+  }
+
   async function processQueue(items, resetProgress = false) {
-    const settings = await chrome.storage.local.get({ batchSize: 1, minTextLength: 12 });
-    const batchSize = Math.max(1, Math.min(3, Number(settings.batchSize) || 1));
+    const settings = await chrome.storage.local.get({ batchSize: 6, minTextLength: 12, parallelRequests: 2, layoutMode: "compact" });
+    const batchSize = Math.max(1, Math.min(12, Number(settings.batchSize) || 6));
+    const parallelRequests = Math.max(1, Math.min(4, Number(settings.parallelRequests) || 2));
+    settings.layoutMode = ["compact", "clear", "translation-only"].includes(settings.layoutMode) ? settings.layoutMode : "compact";
     if (resetProgress) {
       state.total = items.length;
       state.completed = 0;
       state.failed = [];
     }
-    state.queue = [...items];
+    state.queue = [];
     state.mode = "translating";
     state.cancelled = false;
 
-    while (state.queue.length && !state.cancelled) {
-      const batch = state.queue.splice(0, batchSize);
-      updateProgress(`本地翻译 ${state.completed + 1} / ${state.total} 段…`);
-      try {
-        const response = await chrome.runtime.sendMessage({
-          type: "TRANSLATE_BATCH",
-          items: batch.map(({ id, text }) => ({ id, text })),
-        });
-        if (!response?.ok) throw new Error(response?.error || "模型请求失败");
-        const translatedById = new Map(response.translations.map(({ id, translation }) => [id, translation]));
-        for (const item of batch) {
-          const translated = translatedById.get(item.id);
-          if (!translated) throw new Error(`缺少段落译文：${item.id}`);
-          insertTranslation(item, translated);
-          state.completed += 1;
-        }
-      } catch (error) {
-        for (const item of batch) {
-          insertTranslation(item, `翻译失败：${error.message}`, true);
-          state.failed.push(item);
-        }
+    for (const item of sortItemsForTranslation(items)) {
+      const cached = state.translationCache.get(cacheKey(item.text));
+      if (cached) {
+        insertTranslation(item, cached, false, settings.layoutMode);
+        state.completed += 1;
+      } else {
+        state.queue.push(item);
       }
     }
+
+    const workerCount = Math.min(parallelRequests, Math.max(1, Math.ceil(state.queue.length / batchSize)));
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (state.queue.length && !state.cancelled) {
+        const batch = state.queue.splice(0, batchSize);
+        if (batch.length) {
+          updateProgress(`本地翻译 ${Math.min(state.completed + state.failed.length + 1, state.total)} / ${state.total} 段…`);
+          await translateBatchAndInsert(batch, settings);
+        }
+      }
+    });
+    await Promise.all(workers);
 
     if (state.cancelled) {
       state.mode = "paused";
@@ -211,12 +266,12 @@
   }
 
   async function translateArticle() {
-    const settings = await chrome.storage.local.get({ minTextLength: 12 });
+    const settings = await chrome.storage.local.get({ minTextLength: 12, layoutMode: "compact" });
     await translateItemsForSource("article", collectArticleItems, settings.minTextLength, "没有可翻译的正文段落");
   }
 
   async function translateImmersive() {
-    const settings = await chrome.storage.local.get({ minTextLength: 12 });
+    const settings = await chrome.storage.local.get({ minTextLength: 12, layoutMode: "compact" });
     await translateItemsForSource("immersive", collectImmersiveItems, Math.min(3, Number(settings.minTextLength) || 12), "没有可翻译的英文内容");
   }
 
@@ -240,10 +295,10 @@
     try {
       const response = await chrome.runtime.sendMessage({ type: "TRANSLATE_BATCH", items: [{ id: item.id, text: item.text }] });
       if (!response?.ok) throw new Error(response?.error || "模型请求失败");
-      insertTranslation(item, response.translations?.[0]?.translation || "", false);
+      insertTranslation(item, response.translations?.[0]?.translation || "", false, settings.layoutMode || "compact");
     } catch (error) {
       node.dataset.localLlmHoverTranslated = "false";
-      insertTranslation(item, `翻译失败：${error.message}`, true);
+      insertTranslation(item, `翻译失败：${error.message}`, true, settings.layoutMode || "compact");
     } finally {
       state.hoverBusy = false;
     }

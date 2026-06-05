@@ -21,7 +21,15 @@
       <label>模型名称<input id="model" required></label>
       <label>API Key<input id="api-key" type="password" autocomplete="off" placeholder="如服务未启用鉴权，可留空"></label>
       <label>目标语言<input id="target-language" required></label>
-      <label>每批段落数<input id="batch-size" type="number" min="1" max="3" required></label>
+      <label>每批段落数<input id="batch-size" type="number" min="1" max="12" required></label>
+      <label>并发请求数<input id="parallel-requests" type="number" min="1" max="4" required></label>
+      <label>翻译排版
+        <select id="layout-mode">
+          <option value="compact">紧凑双语</option>
+          <option value="clear">清晰双语</option>
+          <option value="translation-only">仅显示译文</option>
+        </select>
+      </label>
       <label>最短段落字符数<input id="min-text-length" type="number" min="1" max="200" required></label>
       <label>单段切分字符数<input id="max-chunk-chars" type="number" min="180" max="1200" required></label>
       <label>失败重试次数<input id="retry-count" type="number" min="1" max="8" required></label>
