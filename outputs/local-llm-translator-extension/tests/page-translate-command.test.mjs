@@ -7,6 +7,7 @@ const contentStyle = readFileSync(new URL("../content-style.css", import.meta.ur
 const popupJs = readFileSync(new URL("../popup.js", import.meta.url), "utf8");
 const popupHtml = readFileSync(new URL("../popup.html", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
+const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 
 test("popup exposes separate article and immersive translation buttons", () => {
   assert.match(popupJs, /activeCommand\("TRANSLATE_ARTICLE"\)/);
@@ -66,6 +67,34 @@ test("selection translation is default-on with transient popover behavior", () =
   assert.match(contentScript, /selectionchange/);
   assert.match(contentScript, /document\.addEventListener\("mouseup"/);
   assert.match(contentScript, /event\.key === "Escape"/);
+});
+
+test("selection translation is injected automatically on newly opened http pages", () => {
+  assert.ok(Array.isArray(manifest.content_scripts));
+  const contentScriptEntry = manifest.content_scripts.find((entry) => entry.js?.includes("content-script.js"));
+  assert.ok(contentScriptEntry);
+  assert.deepEqual(contentScriptEntry.matches, ["http://*/*", "https://*/*"]);
+  assert.equal(contentScriptEntry.run_at, "document_idle");
+  assert.ok(contentScriptEntry.css.includes("content-style.css"));
+});
+
+test("selection popover hides robustly after selection is cancelled", () => {
+  assert.match(contentScript, /function cancelSelectionTranslation/);
+  assert.match(contentScript, /state\.selectionRequestId \+= 1/);
+  assert.match(contentScript, /setTimeout\(\(\) => \{\s*if \(!getSelectedText\(\)\) cancelSelectionTranslation\(\);/s);
+  assert.match(contentScript, /document\.addEventListener\("selectionchange"/);
+  assert.match(contentScript, /window\.addEventListener\("blur"/);
+  assert.match(contentScript, /document\.addEventListener\("visibilitychange"/);
+});
+
+test("page and selection translations release llama context after completion", () => {
+  assert.match(contentScript, /function releaseModelContext/);
+  assert.match(contentScript, /type: "RELEASE_CONTEXT"/);
+  assert.match(contentScript, /releaseModelContext\("page-completed"\)/);
+  assert.match(contentScript, /releaseModelContext\("selection-completed"\)/);
+  assert.match(serviceWorker, /message\.type === "RELEASE_CONTEXT"/);
+  assert.match(serviceWorker, /async function bestEffortClearServerContext/);
+  assert.match(serviceWorker, /clearAllServerSlots/);
 });
 
 test("background worker handles selected word and sentence translation", () => {

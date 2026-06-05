@@ -185,6 +185,16 @@
     state.lastSelectionSignature = "";
   }
 
+  function cancelSelectionTranslation() {
+    clearTimeout(state.selectionTimer);
+    state.selectionRequestId += 1;
+    hideSelectionPopover();
+  }
+
+  function releaseModelContext(reason) {
+    chrome.runtime.sendMessage({ type: "RELEASE_CONTEXT", reason }).catch(() => {});
+  }
+
   function selectionAnchorRect() {
     const selection = window.getSelection?.();
     if (!selection || selection.rangeCount === 0) return null;
@@ -224,13 +234,13 @@
     state.selectionTimer = setTimeout(async () => {
       const settings = await chrome.storage.local.get({ selectionTranslationEnabled: true });
       if (settings.selectionTranslationEnabled === false) {
-        hideSelectionPopover();
+        cancelSelectionTranslation();
         return;
       }
       const text = getSelectedText();
       const mode = classifySelectionText(text);
       if (mode === "none") {
-        hideSelectionPopover();
+        cancelSelectionTranslation();
         return;
       }
       const signature = `${mode}:${text}`;
@@ -250,14 +260,16 @@
         state.selectionCache.set(selectionCacheKey(text, mode), response.translation || "");
         showSelectionPopover(text, response.translation || "", response.mode || mode);
       } catch (error) {
-        if (requestId === state.selectionRequestId) showSelectionPopover(text, `翻译失败：${error.message}`, mode);
+        if (requestId === state.selectionRequestId && getSelectedText() === text) showSelectionPopover(text, `翻译失败：${error.message}`, mode);
+      } finally {
+        if (state.mode !== "translating") releaseModelContext("selection-completed");
       }
     }, 260);
   }
 
   function removeTranslations() {
     document.querySelectorAll("local-llm-translation, #local-llm-progress").forEach((node) => node.remove());
-    hideSelectionPopover();
+    cancelSelectionTranslation();
     Object.assign(state, { mode: "idle", queue: [], total: 0, completed: 0, failed: [], cancelled: false });
   }
 
@@ -340,6 +352,7 @@
     } else {
       state.mode = "completed";
       updateProgress(state.failed.length ? `完成 ${state.completed} / ${state.total} 段；失败 ${state.failed.length} 段，再次点击重试` : `翻译完成 ${state.completed} / ${state.total} 段`);
+      releaseModelContext("page-completed");
     }
   }
 
@@ -400,6 +413,7 @@
       insertTranslation(item, `翻译失败：${error.message}`, true, settings.layoutMode || "compact");
     } finally {
       state.hoverBusy = false;
+      if (state.mode !== "translating") releaseModelContext("hover-completed");
     }
   }
 
@@ -415,7 +429,10 @@
   document.addEventListener("mouseover", handleHoverEvent, { capture: true, signal: scriptAbortController.signal });
   document.addEventListener("mousemove", handleHoverEvent, { capture: true, signal: scriptAbortController.signal });
   document.addEventListener("selectionchange", () => {
-    if (!getSelectedText()) hideSelectionPopover();
+    if (!getSelectedText()) {
+      cancelSelectionTranslation();
+      return;
+    }
     scheduleSelectionTranslation().catch((error) => showError(error.message));
   }, { signal: scriptAbortController.signal });
   document.addEventListener("mouseup", () => {
@@ -424,14 +441,21 @@
   document.addEventListener("keyup", (event) => {
     if (event.key === "Escape") {
       window.getSelection?.()?.removeAllRanges?.();
-      hideSelectionPopover();
+      cancelSelectionTranslation();
       return;
     }
     scheduleSelectionTranslation().catch((error) => showError(error.message));
   }, { capture: true, signal: scriptAbortController.signal });
   document.addEventListener("mousedown", (event) => {
-    if (!event.target?.closest?.("local-llm-selection-popover") && !getSelectedText()) hideSelectionPopover();
+    if (event.target?.closest?.("local-llm-selection-popover")) return;
+    setTimeout(() => {
+      if (!getSelectedText()) cancelSelectionTranslation();
+    }, 0);
   }, { capture: true, signal: scriptAbortController.signal });
+  window.addEventListener("blur", () => cancelSelectionTranslation(), { signal: scriptAbortController.signal });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") cancelSelectionTranslation();
+  }, { signal: scriptAbortController.signal });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Control" && state.lastHoverTarget) {
       translateHoveredNode({ target: state.lastHoverTarget, ctrlKey: true }).catch((error) => showError(error.message));

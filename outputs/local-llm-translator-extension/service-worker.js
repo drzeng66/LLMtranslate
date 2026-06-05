@@ -81,6 +81,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
+  if (message.type === "RELEASE_CONTEXT") {
+    bestEffortClearServerContext(message.reason || "completed")
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: true, result: { released: false, error: error.message } }));
+    return true;
+  }
   if (message.type === "OPEN_DOCUMENT_TRANSLATOR") {
     chrome.tabs.create({ url: chrome.runtime.getURL("document.html") });
     sendResponse({ ok: true });
@@ -310,9 +316,43 @@ async function testMinimalNativeCompletion() {
 }
 
 async function clearServerContext() {
+  return await clearAllServerSlots();
+}
+
+async function bestEffortClearServerContext(reason) {
+  try {
+    return await clearAllServerSlots(reason);
+  } catch (error) {
+    console.warn("Best-effort context release skipped:", reason, error);
+    return { released: false, reason, error: error.message };
+  }
+}
+
+async function clearAllServerSlots(reason = "manual") {
   const settings = await getSettings();
-  const endpoint = assertAllowedEndpoint(`${rootEndpoint(settings.baseUrl)}/slots/0?action=erase`);
-  const response = await fetch(endpoint, { method: "POST", headers: authHeaders(settings) });
-  if (!response.ok) throw new Error(`清空上下文失败 HTTP ${response.status}；确认启动参数包含 --slot-save-path`);
-  return await response.json().catch(() => ({}));
+  const slotIds = await discoverServerSlotIds(settings);
+  const results = [];
+  for (const slotId of slotIds) {
+    const endpoint = assertAllowedEndpoint(`${rootEndpoint(settings.baseUrl)}/slots/${slotId}?action=erase`);
+    const response = await fetch(endpoint, { method: "POST", headers: authHeaders(settings) });
+    if (!response.ok) throw new Error(`清空上下文失败 HTTP ${response.status}；确认启动参数包含 --slot-save-path`);
+    results.push({ slotId, result: await response.json().catch(() => ({})) });
+  }
+  return { released: true, reason, slots: results };
+}
+
+async function discoverServerSlotIds(settings) {
+  const endpoint = assertAllowedEndpoint(`${rootEndpoint(settings.baseUrl)}/slots`);
+  try {
+    const response = await fetch(endpoint, { headers: authHeaders(settings) });
+    if (!response.ok) return [0];
+    const payload = await response.json();
+    const slots = Array.isArray(payload) ? payload : Array.isArray(payload?.slots) ? payload.slots : [];
+    const ids = slots
+      .map((slot, index) => Number.isInteger(slot?.id) ? slot.id : Number.isInteger(slot?.slot_id) ? slot.slot_id : index)
+      .filter((id) => Number.isInteger(id) && id >= 0);
+    return ids.length ? [...new Set(ids)] : [0];
+  } catch {
+    return [0];
+  }
 }
