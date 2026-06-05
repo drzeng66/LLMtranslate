@@ -20,6 +20,7 @@
     selectionTimer: null,
     selectionRequestId: 0,
     lastSelectionSignature: "",
+    dismissedSelectionSignature: "",
   };
 
   const articleSkippedTags = new Set([
@@ -181,11 +182,27 @@
   }
 
   function hideSelectionPopover() {
-    document.getElementById("local-llm-selection-popover")?.remove();
+    document.querySelectorAll("local-llm-selection-popover, #local-llm-selection-popover")
+      .forEach((node) => node.remove());
     state.lastSelectionSignature = "";
   }
 
-  function cancelSelectionTranslation() {
+  function currentSelectionSignature(text = getSelectedText()) {
+    const mode = classifySelectionText(text);
+    if (mode === "none") return "";
+    const rect = selectionAnchorRect();
+    const position = rect
+      ? `${Math.round(rect.left)}:${Math.round(rect.top)}:${Math.round(rect.width)}:${Math.round(rect.height)}`
+      : "no-rect";
+    return `${mode}:${cacheKey(text)}:${position}`;
+  }
+
+  function cancelSelectionTranslation(options = {}) {
+    const dismissCurrentSelection = options.dismissCurrentSelection !== false;
+    if (dismissCurrentSelection) {
+      const signature = currentSelectionSignature();
+      if (signature) state.dismissedSelectionSignature = signature;
+    }
     clearTimeout(state.selectionTimer);
     state.selectionRequestId += 1;
     hideSelectionPopover();
@@ -207,11 +224,14 @@
   function showSelectionPopover(text, translation, mode, pending = false) {
     const rect = selectionAnchorRect();
     if (!rect) return;
-    let popover = document.getElementById("local-llm-selection-popover");
+    const leftovers = [...document.querySelectorAll("local-llm-selection-popover, #local-llm-selection-popover")];
+    let popover = leftovers.find((node) => node.id === "local-llm-selection-popover") || leftovers[0];
+    leftovers.filter((node) => node !== popover).forEach((node) => node.remove());
     if (!popover) {
       popover = document.createElement("local-llm-selection-popover");
       document.documentElement.appendChild(popover);
     }
+    popover.id = "local-llm-selection-popover";
     popover.dataset.mode = mode;
     popover.dataset.pending = String(pending);
     popover.textContent = "";
@@ -240,10 +260,12 @@
       const text = getSelectedText();
       const mode = classifySelectionText(text);
       if (mode === "none") {
-        cancelSelectionTranslation();
+        state.dismissedSelectionSignature = "";
+        cancelSelectionTranslation({ dismissCurrentSelection: false });
         return;
       }
-      const signature = `${mode}:${text}`;
+      const signature = currentSelectionSignature(text);
+      if (state.dismissedSelectionSignature === signature) return;
       if (signature === state.lastSelectionSignature) return;
       state.lastSelectionSignature = signature;
       const cached = state.selectionCache.get(selectionCacheKey(text, mode));
@@ -430,9 +452,12 @@
   document.addEventListener("mousemove", handleHoverEvent, { capture: true, signal: scriptAbortController.signal });
   document.addEventListener("selectionchange", () => {
     if (!getSelectedText()) {
-      cancelSelectionTranslation();
+      state.dismissedSelectionSignature = "";
+      cancelSelectionTranslation({ dismissCurrentSelection: false });
       return;
     }
+    const signature = currentSelectionSignature();
+    if (signature && signature !== state.dismissedSelectionSignature) state.dismissedSelectionSignature = "";
     scheduleSelectionTranslation().catch((error) => showError(error.message));
   }, { signal: scriptAbortController.signal });
   document.addEventListener("mouseup", () => {
@@ -441,6 +466,7 @@
   document.addEventListener("keyup", (event) => {
     if (event.key === "Escape") {
       window.getSelection?.()?.removeAllRanges?.();
+      state.dismissedSelectionSignature = "";
       cancelSelectionTranslation();
       return;
     }
@@ -448,6 +474,7 @@
   }, { capture: true, signal: scriptAbortController.signal });
   document.addEventListener("mousedown", (event) => {
     if (event.target?.closest?.("local-llm-selection-popover")) return;
+    cancelSelectionTranslation();
     setTimeout(() => {
       if (!getSelectedText()) cancelSelectionTranslation();
     }, 0);

@@ -15,13 +15,49 @@ import {
   splitTextForTranslation,
 } from "./lib/translator-core.js";
 
+let activeTranslations = 0;
+let contextReleaseTimer = null;
+let cachedSlotIds = null;
+let contextReleaseUnsupportedUntil = 0;
+
 async function getSettings() {
   return normalizeSettings(await chrome.storage.local.get(DEFAULT_SETTINGS));
 }
 
+async function isAlreadyInjected(tabId) {
+  try {
+    const [probe] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => Boolean(globalThis.__localLlmTranslatorInjected),
+    });
+    return Boolean(probe?.result);
+  } catch {
+    return false;
+  }
+}
+
 async function ensureInjected(tabId) {
+  if (await isAlreadyInjected(tabId)) return;
   await chrome.scripting.insertCSS({ target: { tabId }, files: ["content-style.css"] });
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] });
+}
+
+function isInjectableUrl(url) {
+  return /^https?:\/\//i.test(String(url || ""));
+}
+
+async function ensureInjectedIfPossible(tab) {
+  if (!tab?.id || !isInjectableUrl(tab.url)) return;
+  try {
+    await ensureInjected(tab.id);
+  } catch (error) {
+    console.debug("Skipping automatic translator injection:", tab.url, error?.message || error);
+  }
+}
+
+async function injectExistingTabs() {
+  const tabs = await chrome.tabs.query({});
+  await Promise.allSettled(tabs.map((tab) => ensureInjectedIfPossible(tab)));
 }
 
 async function activeTab() {
@@ -56,6 +92,29 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
+chrome.runtime.onInstalled.addListener(() => {
+  injectExistingTabs().catch((error) => console.debug("Initial translator injection skipped:", error));
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  injectExistingTabs().catch((error) => console.debug("Startup translator injection skipped:", error));
+});
+
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete" || changeInfo.url) {
+    ensureInjectedIfPossible(tab).catch((error) => console.debug("Tab update translator injection skipped:", error));
+  }
+});
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await ensureInjectedIfPossible(tab);
+  } catch (error) {
+    console.debug("Tab activation translator injection skipped:", error);
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "TRANSLATE_BATCH") {
     translateBatch(message.items, message.options || {})
@@ -82,10 +141,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message.type === "RELEASE_CONTEXT") {
-    bestEffortClearServerContext(message.reason || "completed")
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error) => sendResponse({ ok: true, result: { released: false, error: error.message } }));
-    return true;
+    sendResponse({ ok: true, result: scheduleContextRelease(message.reason || "completed") });
+    return false;
   }
   if (message.type === "OPEN_DOCUMENT_TRANSLATOR") {
     chrome.tabs.create({ url: chrome.runtime.getURL("document.html") });
@@ -101,32 +158,49 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 async function translateSelection(text) {
-  const mode = classifySelectionText(text);
-  if (mode === "none") throw new Error("没有可翻译的选中文本");
-  const item = { id: `selection-${Date.now()}`, text: String(text || "").replace(/\s+/g, " ").trim() };
-  const options = {
-    mode: mode === "word" ? "selection-word" : "selection-sentence",
-    maxTokens: mode === "word" ? 160 : 384,
-    maxChunkChars: 900,
-  };
-  const [result] = await translateOneChunk(item, await getSettings(), options);
-  return { mode, translation: result.translation };
+  return await withTranslationActivity(async () => {
+    const mode = classifySelectionText(text);
+    if (mode === "none") throw new Error("没有可翻译的选中文本");
+    const item = { id: `selection-${Date.now()}`, text: String(text || "").replace(/\s+/g, " ").trim() };
+    const options = {
+      mode: mode === "word" ? "selection-word" : "selection-sentence",
+      maxTokens: mode === "word" ? 160 : 384,
+      maxChunkChars: 900,
+    };
+    const [result] = await translateOneChunk(item, await getSettings(), options);
+    return { mode, translation: result.translation };
+  });
 }
 
 async function translateBatch(items, options = {}) {
-  const settings = await getSettings();
-  if (!items.length) return [];
-  if (items.length === 1) return [await translateItemWithChunks(items[0], options, settings)];
-  if (canTranslateAsSingleBatch(items, options, settings)) {
-    try {
-      return await translateOneChunk(items, settings, options);
-    } catch (error) {
-      console.warn("Batch translation failed; falling back to per-item translation:", error);
+  return await withTranslationActivity(async () => {
+    const settings = await getSettings();
+    if (!items.length) return [];
+    if (items.length === 1) return [await translateItemWithChunks(items[0], options, settings)];
+    if (canTranslateAsSingleBatch(items, options, settings)) {
+      try {
+        return await translateOneChunk(items, settings, options);
+      } catch (error) {
+        console.warn("Batch translation failed; falling back to per-item translation:", error);
+      }
     }
+    const translatedItems = [];
+    for (const item of items) translatedItems.push(await translateItemWithChunks(item, options, settings));
+    return translatedItems;
+  });
+}
+
+async function withTranslationActivity(operation) {
+  activeTranslations += 1;
+  if (contextReleaseTimer) {
+    clearTimeout(contextReleaseTimer);
+    contextReleaseTimer = null;
   }
-  const translatedItems = [];
-  for (const item of items) translatedItems.push(await translateItemWithChunks(item, options, settings));
-  return translatedItems;
+  try {
+    return await operation();
+  } finally {
+    activeTranslations = Math.max(0, activeTranslations - 1);
+  }
 }
 
 function canTranslateAsSingleBatch(items, options, settings) {
@@ -319,10 +393,29 @@ async function clearServerContext() {
   return await clearAllServerSlots();
 }
 
+function scheduleContextRelease(reason = "completed") {
+  if (contextReleaseTimer) clearTimeout(contextReleaseTimer);
+  contextReleaseTimer = setTimeout(() => {
+    contextReleaseTimer = null;
+    if (activeTranslations > 0) {
+      scheduleContextRelease(reason);
+      return;
+    }
+    bestEffortClearServerContext(reason).catch((error) => console.debug("Scheduled context release skipped:", error));
+  }, 3500);
+  return { scheduled: true, reason, activeTranslations };
+}
+
 async function bestEffortClearServerContext(reason) {
+  if (Date.now() < contextReleaseUnsupportedUntil) {
+    return { released: false, reason, skipped: "temporarily-unsupported" };
+  }
   try {
     return await clearAllServerSlots(reason);
   } catch (error) {
+    if (/HTTP 404|HTTP 501|HTTP 405/i.test(error.message)) {
+      contextReleaseUnsupportedUntil = Date.now() + 60000;
+    }
     console.warn("Best-effort context release skipped:", reason, error);
     return { released: false, reason, error: error.message };
   }
@@ -330,7 +423,7 @@ async function bestEffortClearServerContext(reason) {
 
 async function clearAllServerSlots(reason = "manual") {
   const settings = await getSettings();
-  const slotIds = await discoverServerSlotIds(settings);
+  const slotIds = cachedSlotIds || (cachedSlotIds = await discoverServerSlotIds(settings));
   const results = [];
   for (const slotId of slotIds) {
     const endpoint = assertAllowedEndpoint(`${rootEndpoint(settings.baseUrl)}/slots/${slotId}?action=erase`);

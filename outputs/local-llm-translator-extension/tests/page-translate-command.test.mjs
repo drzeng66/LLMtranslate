@@ -76,11 +76,28 @@ test("selection translation is injected automatically on newly opened http pages
   assert.deepEqual(contentScriptEntry.matches, ["http://*/*", "https://*/*"]);
   assert.equal(contentScriptEntry.run_at, "document_idle");
   assert.ok(contentScriptEntry.css.includes("content-style.css"));
+  assert.ok(manifest.host_permissions.includes("http://*/*"));
+  assert.ok(manifest.host_permissions.includes("https://*/*"));
+  assert.match(serviceWorker, /async function isAlreadyInjected/);
+  assert.match(serviceWorker, /__localLlmTranslatorInjected/);
+  assert.match(serviceWorker, /if \(await isAlreadyInjected\(tabId\)\) return/);
+  assert.match(serviceWorker, /chrome\.runtime\.onInstalled\.addListener/);
+  assert.match(serviceWorker, /chrome\.runtime\.onStartup\.addListener/);
+  assert.match(serviceWorker, /chrome\.tabs\.onUpdated\.addListener/);
+  assert.match(serviceWorker, /chrome\.tabs\.onActivated\.addListener/);
+  assert.match(serviceWorker, /function isInjectableUrl/);
 });
 
 test("selection popover hides robustly after selection is cancelled", () => {
   assert.match(contentScript, /function cancelSelectionTranslation/);
   assert.match(contentScript, /state\.selectionRequestId \+= 1/);
+  assert.match(contentScript, /popover\.id = "local-llm-selection-popover"/);
+  assert.match(contentScript, /document\.querySelectorAll\("local-llm-selection-popover, #local-llm-selection-popover"\)/);
+  assert.match(contentScript, /leftovers\.filter\(\(node\) => node !== popover\)\.forEach\(\(node\) => node\.remove\(\)\)/);
+  assert.match(contentScript, /dismissedSelectionSignature/);
+  assert.match(contentScript, /function currentSelectionSignature/);
+  assert.match(contentScript, /state\.dismissedSelectionSignature === signature/);
+  assert.match(contentScript, /document\.addEventListener\("mousedown", \(event\) => \{\s*if \(event\.target\?\.closest\?\.\("local-llm-selection-popover"\)\) return;\s*cancelSelectionTranslation\(\);/s);
   assert.match(contentScript, /setTimeout\(\(\) => \{\s*if \(!getSelectedText\(\)\) cancelSelectionTranslation\(\);/s);
   assert.match(contentScript, /document\.addEventListener\("selectionchange"/);
   assert.match(contentScript, /window\.addEventListener\("blur"/);
@@ -93,6 +110,9 @@ test("page and selection translations release llama context after completion", (
   assert.match(contentScript, /releaseModelContext\("page-completed"\)/);
   assert.match(contentScript, /releaseModelContext\("selection-completed"\)/);
   assert.match(serviceWorker, /message\.type === "RELEASE_CONTEXT"/);
+  assert.match(serviceWorker, /function scheduleContextRelease/);
+  assert.match(serviceWorker, /activeTranslations/);
+  assert.match(serviceWorker, /contextReleaseTimer/);
   assert.match(serviceWorker, /async function bestEffortClearServerContext/);
   assert.match(serviceWorker, /clearAllServerSlots/);
 });
